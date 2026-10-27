@@ -172,3 +172,25 @@ are recorded as discarded in the ledger.
 - The step stream loses its last step in about 305 of 477 agent runs. It is recovered from the
   session store every time.
 - Rust: the host-side JavaScript is under 1 s per run, so a rewrite would save almost nothing.
+
+## Found in the Lykos P18 grill, 2026-10-28
+
+Found by reading the source, not in a live run.
+
+### 10. A dead loop driver stays dead
+
+**Seen.** `lib/loop.mjs` saves `_loops/<name>/state.json` after every step, and `resume()`
+(326-398) picks the loop up again. Nothing calls it on its own: when the driver process dies (a
+closed terminal, a reboot, a killed shell), the loop waits until someone runs `loop resume`.
+`status` lists it, but only when someone asks.
+
+**Workaround.** Run `delegate.sh status <repo>` at the start of a session and `loop resume` what it
+lists.
+
+### 11. The round cap's code default differs from its configured value
+
+**Seen.** `settings()` in `lib/loop.mjs:70` defaults `LOOP_MAX_ROUNDS` to 4. `agent-box.conf:59`
+sets 5, and the skill and README say 5. With the shipped config the cap is 5; the code default only
+applies if the line is removed.
+
+**Workaround.** None needed today. Better: one default, in one place.
