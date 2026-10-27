@@ -1,6 +1,6 @@
 ---
 name: agent-box
-description: Delegate coding, writing, review, research or bug-hunt work to sandboxed OpenCode workers (Gemini, DeepSeek, Claude Opus, Kimi K3 via OmniRoute), run to-tickets features in ticket mode, benchmark models, read the run ledger, consult a one-pass advisor (Kimi K3), and run the gate yourself. Use when the user asks to delegate, offload, fan out, run tickets, benchmark, get a second review or opinion, debate a design, or hand work to Gemini, DeepSeek, Opus, Kimi, OpenCode, OmniRoute, "the box" or "agent-box".
+description: Delegate coding, writing, review, research or bug-hunt work to sandboxed OpenCode workers (Gemini, DeepSeek, Claude Opus via OmniRoute), run to-tickets features in ticket mode, convene a council of advisors (Sol, Gemini, DeepSeek) on a plan, close a phase with a whole-diff review, benchmark models, read the run ledger, and run the gate yourself. Use when the user asks to delegate, offload, fan out, run tickets, benchmark, get a second review or opinion, debate a plan or design, finish or close a phase, or hand work to Gemini, DeepSeek, Opus, Sol, OpenCode, OmniRoute, "the box" or "agent-box".
 ---
 
 # agent-box
@@ -25,6 +25,10 @@ the evidence.
    the other one (on a Podman machine, never start Docker Desktop: its images are separate and stale).
 4. A recent `delegate.sh baseline <repo>` exists, so pre-existing failures are known.
 5. `projects/<repo>.context.yaml` exists for context packs. Without one, workers get no area docs.
+6. One orchestrator per checkout. When another orchestrator (a Codex or second Claude session) works
+   on the same repo, take your own `git worktree` and pass its path as `<repo>`.
+7. A new session: `delegate.sh status <repo>` lists runs, loops and phase reviews left unfinished,
+   each with its next command.
 
 ## Write the task file (the harness builds the rest)
 
@@ -221,6 +225,9 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
    - `--fresh none`: no fresh attempts, a stall stops for you; `--fresh implement-hard`: one fresh
      attempt, a single implementer, instead of two in parallel.
    - `--max-rounds N`, `--max-fixes N`: the caps; raise them on a resume to let it go on.
+   - `--add FILE`: findings you already have (yours, a council's, an earlier review's) go in at the start,
+     as markdown or a JSON findings array, instead of waiting for round 1 to find them.
+   - `--effort LEVEL`: every reviewer and fresh attempt at that effort.
    A new review mode or roles on a resume makes the next review cold, by the new reviewers.
    `review` takes `--review-mode` and `--roles` too, and so does ticket mode (`ticket`, `feature ...
    run`, `ticket-review`).
@@ -237,18 +244,48 @@ lives, write that test yourself. When you do not, you decide how to find it: an 
 search for a small one. `hunt` (Gemini Flash) is out of the workflow: on T194 and T174b it added 23-30
 minutes and changed neither outcome. Never for tickets.
 
+**Effort**: every command that starts a worker or an advisor (`run`, `fanout`, `review`, `loop`,
+`explore`, `ask`, `council`) takes `--effort none|low|medium|high|xhigh|max`, and a role takes one
+inline: `--role implement@max`, `--roles review-spec,review-std@max`. Where the effort lives is checked
+against OmniRoute's list: DeepSeek and Codex change model id (`deepseek-flash-high` → `-max`), Gemini
+gets `reasoning_effort`, antigravity Claude refuses (fixed by its id). Raise it for a hard bug or a
+second attempt; lower it for a trivial edit.
+
 **Prose**: `--role draft` (Gemini) for drafts, `--role write` (Opus) for docs that ship. Review the
 wording against the repo's style rules yourself.
 
-**Second opinion** (design, plan, a contested call): `ask <repo> --prompt q.md [--file ctx ...]`
-runs a one-pass advisor with no tools. `advise` is Kimi K3: its $20 ends 2026-10-24, so until then ask
-it on every plan and contested call. `advise-alt` is Opus 4.6, the advisor after that date.
+**Council** (every plan, ADR, phase plan and contested call, before you present it):
+`council <repo> --prompt q.md [--file plan.md ...]`. Sol 6.1 high answers in one pass; Gemini 3.8 Flash
+and DeepSeek Flash high read the repo read-only to check the plan's claims. One digest comes back,
+`## Agreed`, `## Unique`, `## Contradicting`, each item tagged with its advisor. Resolve every
+medium+ item (change the plan, or say in the plan why not) before the user sees it. RakunLoots P10
+(2026-10-26): DeepSeek and Gemini improved an Opus plan, and Codex still found a gap it had. One quick
+question: `ask <repo> --prompt q.md` (Sol alone).
 
-**Budget and pools**: Opus+Sonnet share a pool, all Gemini models share one, DeepSeek and Kimi have
+**Budget and pools**: Opus+Sonnet share a pool, all Gemini models share one, DeepSeek and Codex (Sol) have
 their own. Gemini does the bulk; DeepSeek escalations, quick edits, standards reviews and review-both;
 Opus spec reviews and prose; Opus is never a coder by default. Unused: Sonnet (spends Opus's pool),
 Composer (misreported tool results, research/findings.md §6). Every worker has a `scout` subagent
 (Gemini 3.8 Flash) for searching. Ponytail is loaded by every worker before it writes code.
+
+## Closing a phase
+
+A phase is done when `phase-close` prints `ready`, not when the last ticket lands. Per-ticket loops
+never see the seams between tickets: on Lykos, RakunLoots and RakunMiniItems (2026-10) a whole-phase
+review found medium+ bugs 3-4 rounds in a row after the orchestrator had called the phase finished.
+
+1. `phase-review <repo> --base <phase-start> [--spec FILE]...` (background, then `wait`). It splits the
+   phase diff into areas under `REVIEW_DIFF_MAX`, reviews every area with one family per round, rotating
+   (DeepSeek, Opus, Gemini), and ends when two rounds in a row from different families find nothing
+   medium or worse on the same head. Findings stop it (exit 3): fix every one, each with a failing test
+   first (a `run` + `loop`, or yourself), commit, rerun with the same `--name`.
+2. `phase-close <repo> --base <phase-start> [--issues 12,13]`: phase-review clean on this head, clean
+   tree, no unmerged `agent/*` branch from the phase, `HOST_GATE_CMD` green on the host, no loop
+   waiting on you, the issues closed. Fix the first failing item and rerun until `ready`.
+3. Report. "Left for you" holds only what an agent cannot do: a login or credential, spending money,
+   something the user must see in a game client or UI, a product decision the spec leaves open. Every
+   other item, however small, is yours: do it before reporting. A medium+ item a loop listed as outside
+   its scope is a bug to fix or rule on, never a note.
 
 ## Accepting a result
 

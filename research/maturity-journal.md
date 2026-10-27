@@ -129,3 +129,26 @@ no co-author trailer in commits.
   - e33b0fa+: `--base <sha>` not contained in HEAD bundled HEAD instead ("reference is not a tree"); now a
     temporary branch refs/heads/agent-box-tmp/base-<run> (a bundle clone takes refs/heads only).
 - Lykos peak-wrap on e33b0fa+: 17.3 min end to end (9.1 + 8.2), 1 round, 0 blocking -> approve.
+
+## Retro fixes (2026-10-27, branch retro-fixes)
+
+From the retro over Lykos, RakunLoots and RakunMiniItems sessions (Claude Code and Codex).
+
+- Effort: `role@LEVEL` and `--effort` on run, fanout, review, loop, explore, ask, council (lib/effort.mjs).
+  Checked against OmniRoute's list: `review-std@max` ran on deepseek/deepseek-flash-max. OmniRoute lists
+  antigravity/claude-opus-4-6-thinking-low but its live catalog refuses it (400), so antigravity Claude
+  refuses any effort change.
+- Sol: agentrouter/gpt-6.1-sol answers only on /v1/responses (400 on chat completions); ask.mjs falls
+  back to it. "ok" at high: 34 s. codex/gpt-6-sol-high answers on chat completions.
+- Kimi (cursor/kimi-k3-high): 502 "empty turn (often usage/quota exhausted)" on 2026-10-27. advise is
+  Sol 6.1, adjudicate Gemini.
+- Council smoke (Lykos, a --dry-run question): Sol and Gemini answered, merged digest with tags. The
+  DeepSeek member's launch died 3 s after the daily auto-gc started at 18:17:10, with nothing in its log;
+  rerun alone it finished (107 s). launch now names the failing line (ERR trap); council retries a
+  silent member once. The trap found the cause on a spec-check set run: slot_acquire's "held by" line
+  failed under pipefail when a free slot had no owner file (Lykos, PROJECT_SLOTS=1), and set -e ended the
+  launch. Fixed; a reproduction with slot 1 held now prints "waits" instead.
+- phase-review smoke on Lykos HEAD~1 (2 files, 1 area): DeepSeek round unreadable (the --paths bug),
+  then Opus clean, Gemini clean: done. phase-close lists loops started on the phase base or later only.
+- phase-review smoke 1: the newline-joined --paths split on Windows ("unknown option docs/plan/phases.md");
+  now space-joined.

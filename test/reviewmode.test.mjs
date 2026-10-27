@@ -48,11 +48,38 @@ test("delegate.sh roles: the default stack, and the review mode a project sets",
   const row = (n) => out.split("\n").find((l) => l.split(/\s+/)[0] === n)?.split(/\s+/);
   assert.deepEqual(row("REVIEW_MODE"), ["REVIEW_MODE", "project", "both"]);
   assert.equal(row("LOOP_MAX_ROUNDS")?.[2], "5");
-  assert.equal(row("adjudicate")?.[2], "cursor/kimi-k3-high");
+  assert.equal(row("adjudicate")?.[2], "gemini-3.8-flash-tiered");
+  assert.equal(row("advise")?.[2], "agentrouter/gpt-6.1-sol");
   assert.equal(row("review-spec")?.[2], "antigravity/claude-opus-4-6-thinking-high");
   assert.deepEqual(row("review-std")?.slice(2), ["deepseek/deepseek-flash", "high"]);
   assert.deepEqual(row("review-both")?.slice(2), ["deepseek/deepseek-flash", "high"]);
   assert.equal(row("implement-hard")?.[2], "deepseek/deepseek-flash-max");
+});
+
+test("delegate.sh review --paths: one area of the diff; a role@effort keeps its prompt and run name", () => {
+  const dir = tmp("ab-paths-");
+  const git = (...a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8" });
+  const commit = (f) => { fs.writeFileSync(path.join(dir, f), `${f}\n`); git("add", "."); git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", f); };
+  git("init", "-q", "-b", "main");
+  commit("base.txt");
+  git("checkout", "-q", "-b", "agent/p");
+  commit("a.txt"); commit("b.txt");
+  const env = path.join(dir, "settings.env");
+  fs.writeFileSync(env, "OMNIROUTE_API_KEY=\n");
+  const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
+  try {
+    spawnSync("bash", ["delegate.sh", "review", dir, "agent/p", "--against", "main", "--name", "P", "--roles", "review-both-gemini@low", "--paths", "b.txt"],
+      { cwd: BOX, encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env, AGENT_BOX_HERDR: "0" } });
+    const tdir = fs.readdirSync(runs).find((f) => f.startsWith(".review-"));
+    const task = fs.readFileSync(path.join(runs, tdir, "task-review-both-gemini-low.md"), "utf8");
+    assert.match(task, /both axes, spec and standards/, "review-both-* reads the review-both prompt");
+    assert.match(task, /files:\n  - b\.txt\n---/);
+    assert.match(task, /report findings in these files only[\s\S]*- b\.txt/);
+    assert.doesNotMatch(task, /\+a\.txt/, "the other file's diff stays out");
+    assert.deepEqual(fs.readdirSync(runs).filter((f) => f.endsWith(".log")), [".P-review-both-gemini.log"]);
+  } finally {
+    fs.rmSync(runs, { recursive: true, force: true });
+  }
 });
 
 test("delegate.sh review in mode both: one review-both run, its own prompt, --prior both=", () => {

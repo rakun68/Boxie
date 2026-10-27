@@ -2,7 +2,7 @@
 # agent-box: run an OpenCode worker on a git repo inside a disposable container (Podman by default).
 # The repo goes in as a git bundle and comes back as a git bundle. The container never sees the
 # host .git, your home directory, or any credential except the project's OmniRoute key.
-set -euo pipefail
+set -Eeuo pipefail
 
 BOX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # fanout, review, explore and batch start runs of this script. "$0" is whatever the caller typed: a
@@ -47,9 +47,12 @@ Usage: delegate.sh <command> ...
                                  from projects/<repo>.Dockerfile (its toolchain, FROM agent-box:latest)
   models   <repo>                List models the project's OmniRoute key can use
   baseline <repo>                Clone + setup + tests in the container, no agent
-  run      <repo> <task.md> [--role R | --model M] [--review] [--name N] [--base REF] [--timeout MIN]
-                            [--variant V] [--web] [--test CMD]
+  run      <repo> <task.md> [--role R[@EFFORT] | --model M] [--effort LEVEL] [--review] [--name N] [--base REF]
+                            [--timeout MIN] [--variant V] [--web] [--test CMD]
                                  Run one task. Result lands as branch agent/<name> in <repo>.
+                                 --effort none|low|medium|high|xhigh|max (or role@LEVEL; fanout, review,
+                                 loop, explore, ask and council take it too): checked against OmniRoute,
+                                 it may change the model id (deepseek-flash-max) or refuse (antigravity Claude).
                                  --role picks the model from agent-box.conf. --review (or a read-only
                                  role) discards every edit and skips tests; the output is the report.
   continue <repo> <run-name> (-m TEXT | -f FILE) [--name N] [--timeout MIN] [--steps N] [--at BRANCH (review runs)]
@@ -72,9 +75,11 @@ Usage: delegate.sh <command> ...
   answer   <repo> <run-name> <id> (-m TEXT | -f FILE)
                                  Answer a running worker's question; it continues where it stopped
                                  (run --no-ask: the worker gets no ask_orchestrator tool)
-  fanout   <repo> <task.md> --roles a,b[,c] [--name N] [run options]
-                                 Same task on several roles in parallel; prints a comparison table
+  fanout   <repo> <task.md> --roles a,b[,c] [--name N] [--score CMD] [run options]
+                                 Same task on several roles in parallel; prints a comparison table.
+                                 --score: CMD run on every result branch in a container (exit 0 = pass)
   review   <repo> <branch> [--spec FILE ...] [--review-mode split|both | --roles a,b] [--against REF] [--focus TEXT]
+                            [--effort LEVEL] [--paths "a b"]
                                  Read-only review, every reviewer given the branch's task and every --spec.
                                  Review mode (REVIEW_MODE, per project): split = two reviewers in parallel,
                                  review-spec and review-std; both = one review-both covering both axes.
@@ -82,7 +87,7 @@ Usage: delegate.sh <command> ...
                                  --name P names the runs P-<role>; --prior spec=FILE|std=FILE|both=FILE
                                  puts the previous round's findings first, to recheck
   loop     <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE]
-                        [--review-mode split|both] [--roles a,b] [--fresh ROLES|none] [--max-fixes N]
+                        [--review-mode split|both] [--roles a,b] [--fresh ROLES|none] [--max-fixes N] [--effort LEVEL]
                                  Review, rerun each finding's reproduction and the tests next to the
                                  change, fix what is proven, review the fix, until nothing blocks.
                                  Stuck findings, regressions, serious findings after 3 fix rounds or
@@ -103,8 +108,23 @@ Usage: delegate.sh <command> ...
   loop-watch <repo> <loop>       Live view of a loop: rounds, the running step and its time, each
                                  finding and where it went, decisions, what to do when it stops.
                                  With herdr running, the loop opens it in a tab of its own
-  ask     <repo> [--role advise|advise-alt | --model M] [--prompt FILE] [--file CTX ...]
-                                 One-pass advisor (debate/critique), no tools; prompt from FILE or stdin
+  ask     <repo> [--role advise|advise-alt | --model M] [--effort LEVEL] [--prompt FILE] [--file CTX ...]
+                                 One-pass advisor (debate/critique), no tools; prompt from FILE or stdin.
+                                 advise is Sol 6.1 (the Responses API when chat completions refuse)
+  council  <repo> --prompt FILE [--file CTX ...] [--members a,b,c] [--effort LEVEL] [--name N]
+                                 COUNCIL's advisors in parallel (Sol single-pass; Gemini and DeepSeek
+                                 read-only runs that check the repo), merged into one digest: agreed,
+                                 unique, contradicting, each item tagged. runs/<p>/_council/<name>/
+  phase-review <repo> --base REF [--head REF] [--name N] [--spec FILE ...] [--max-rounds N] [--roles a,b,c]
+                                 The whole phase diff, split into areas under REVIEW_DIFF_MAX, one family
+                                 per round (PHASE_REVIEW_ROLES, rotating) until two rounds in a row from
+                                 different families find nothing medium+ on the same head. Exit 3: findings
+  phase-close <repo> --base REF [--head REF] [--name N] [--issues 12,13]
+                                 The phase checklist: phase-review clean on this head, clean tree, no
+                                 unmerged agent/* branch of the phase, HOST_GATE_CMD green, no loop
+                                 waiting, issues closed. Prints ready or the first failing item
+  status   <repo>                Unfinished runs, loops waiting on you, open phase reviews, each with
+                                 its next command
   show     <repo> <name> [--full] A finished run in a few lines again; --full: summary, test tail, final message
   hunt     <repo> <bug.md> [--base REF] [--name N]
                                  A reported bug with no known location: bughunt (Gemini Flash high)
@@ -115,7 +135,9 @@ Usage: delegate.sh <command> ...
                                  any ROLE_*, REVIEW_MODE, REVIEW_ROLES, SCOUT_MODEL, LOOP_MAX_ROUNDS or
                                  TICKET_ESCALATE_* line in its projects/<repo>.env
   config   <repo>                The project's image, caches and every setting its .env sets
-  setup    <repo> [--dry-run]    First-time projects/<repo>.env, .Dockerfile and .context.yaml from the
+  setup    <repo> [--dry-run] [--init-git]
+                                 --init-git: a plain folder becomes a git repo with one commit first.
+                                 First-time projects/<repo>.env, .Dockerfile and .context.yaml from the
                                  repo's manifests (Node, Go, Rust, CMake, Gradle, Maven, Python); never
                                  overwrites a file
   install-skill [<dir>]          The Claude Code skill, with this clone's path, into ~/.claude/skills/agent-box
@@ -130,7 +152,8 @@ Usage: delegate.sh <command> ...
                                  history tasks at another checkout
   clean                        Remove leftover agent-box containers (and parked ones)
   unpark   <repo> <run>...|--all Remove parked containers of these runs (and <run>-*); the loop does it itself
-  spec-check <repo> <task.md> [--role R] [--name N] [--base REF]
+  spec-check <repo> <task.md|dir> [--role R] [--name N] [--base REF]
+                                 A dir: every .md in it checked together, for gaps between tickets too.
                                  Read-only pass (review-spec-alt, DeepSeek) listing what the task leaves
                                  undecided or where it contradicts its docs, before anyone implements it.
                                  `run` does it itself for a task with `issue:` (SPEC_CHECK=0 or --no-spec-check: off)
@@ -182,6 +205,21 @@ load_project() {
 scratch() { mkdir -p "$BOX/runs/.tmp" && mktemp "$BOX/runs/.tmp/$1.XXXXXX"; }
 
 need_key() { [ -n "${OMNIROUTE_API_KEY:-}" ] || die "OMNIROUTE_API_KEY is empty in projects/$PROJECT.env"; }
+
+# MODEL and EFFORT from a role, "role" or "role@effort". The effort (the second argument wins over the
+# @ part) goes through lib/effort.mjs: it may change the id (deepseek-flash-high → -max) or refuse.
+role_model() {
+  local role="${1%%@*}" eff="${2:-}" var
+  [[ "$1" == *@* ]] && [ -z "$eff" ] && eff="${1#*@}"
+  var="ROLE_${role//-/_}"
+  [ -n "${!var:-}" ] || die "unknown role $role (define $var in agent-box.conf)"
+  read -r MODEL EFFORT <<<"${!var}"
+  [ -z "$eff" ] || set_effort "$eff"
+}
+set_effort() {
+  local r; r="$(OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" node "$(winpath "$BOX/lib/effort.mjs")" "$MODEL" "$1")" || die "effort $1 refused for $MODEL"
+  read -r MODEL EFFORT <<<"$r"
+}
 
 cmd_build() {
   dk build -t "$BASE_IMAGE" "$(winpath "$BOX/image")" || return 1
@@ -335,6 +373,10 @@ cmd_gc() {
 
 launch() {
   local name="$1" task="$2" base="$3" skip_agent="$4"
+  # set -e ends a launch on any failing command without a word: a council member died 3 s after the
+  # daily gc started, with nothing in its log (2026-10-27): slot_acquire, below. Name the line instead.
+  # Not in subshells: a failing command there is handled by its caller (compgen with no match).
+  trap '[ "$BASH_SUBSHELL" != 0 ] || echo "agent-box: launch stopped at delegate.sh:$LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
   local run_dir="$BOX/runs/$PROJECT/$name" branch="agent/$name"
   [ -e "$run_dir" ] && die "run $name already exists"
   git -C "$REPO" show-ref --verify --quiet "refs/heads/$branch" && die "branch $branch already exists in $REPO"
@@ -581,7 +623,9 @@ slot_acquire() {
       slot_unlock "$d"
     fi
     if [ "$waited" = 0 ]; then
-      holders="$(for i in $(seq 1 "$n"); do read -r _ nm pr 2>/dev/null <"$d/$i/owner" && echo "$i:$nm${pr:+ ($pr)}"; done | paste -sd, -)"
+      # || true: a free slot has no owner file, and under pipefail its failed read made this line, and so
+      # the launch, exit without a word (a council member and a spec check under PROJECT_SLOTS=1, 2026-10-27).
+      holders="$(for i in $(seq 1 "$n"); do read -r _ nm pr 2>/dev/null <"$d/$i/owner" && echo "$i:$nm${pr:+ ($pr)}" || true; done | paste -sd, -)"
       if [ "$cap" -gt 0 ] && [ "$mine" -ge "$cap" ]; then
         echo "agent-box: $1 waits: $PROJECT already has $mine of PROJECT_SLOTS=$cap (slots: ${holders:-none})" >&2
       else
@@ -636,18 +680,16 @@ cmd_run() {
   local repo="$1" task="$2"; shift 2
   [ -f "$task" ] || die "task file not found: $task"
   load_project "$repo"; need_key
-  local name="" base="HEAD" role="" rulings=""
+  local name="" base="HEAD" role="" rulings="" eff="" spec=""
   MODEL="${DEFAULT_MODEL:-}" EFFORT="" VARIANT="" ALLOW_WEB=0 REVIEW=0 ASK="${ASK:-1}"
   while [ $# -gt 0 ]; do
     case "$1" in
-      --role) role="$2"; shift 2
-        local var="ROLE_${role//-/_}"
-        [ -n "${!var:-}" ] || die "unknown role $role (define $var in agent-box.conf)"
-        read -r MODEL EFFORT <<<"${!var}"
+      --role) spec="$2"; role="${2%%@*}"; shift 2
+        role_model "$spec"
         case " ${READ_ONLY_ROLES:-} " in *" $role "*) REVIEW=1 ;; esac ;;
       --review) REVIEW=1; shift ;;
-      --model) MODEL="$2"; EFFORT=""; shift 2 ;;
-      --effort) EFFORT="$2"; shift 2 ;;
+      --model) MODEL="$2"; EFFORT=""; spec=""; shift 2 ;;
+      --effort) eff="$2"; shift 2 ;;
       --name) name="$2"; shift 2 ;;
       --base) base="$2"; shift 2 ;;
       --timeout) TIMEOUT_MIN="$2"; shift 2 ;;
@@ -669,6 +711,8 @@ cmd_run() {
     esac
   done
   [ -n "$MODEL" ] || die "no model: pass --role, --model or set DEFAULT_MODEL"
+  # --effort wins over role@effort, wherever it stood on the line.
+  if [ -n "$eff" ]; then if [ -n "$spec" ]; then role_model "$spec" "$eff"; else set_effort "$eff"; fi; fi
   ROLE="$role"
   # Rulings join the task itself, so the worker and every later reviewer read them as binding.
   if [ -n "$rulings" ]; then
@@ -1041,11 +1085,12 @@ table() {
 # then by diff review, never by the workers' own reports.
 cmd_fanout() {
   local repo="$1" task="$2"; shift 2
-  local roles="" name="" passthru=()
+  local roles="" name="" score="" passthru=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --roles) roles="$2"; shift 2 ;;
       --name) name="$2"; shift 2 ;;
+      --score) score="$2"; shift 2 ;;   # a command run on every result branch in a container: exit 0 = pass
       *) passthru+=("$1"); shift ;;
     esac
   done
@@ -1055,11 +1100,18 @@ cmd_fanout() {
   [ -n "$name" ] || name="fan-$(date +%Y%m%d-%H%M%S)"
   local names=() r
   for r in ${roles//,/ }; do
-    "${SELF[@]}" run "$repo" "$task" --role "$r" --name "$name-$r" "${passthru[@]}" >"$BOX/runs/$PROJECT/.$name-$r.log" 2>&1 &
-    names+=("$name-$r"); sleep 2
+    "${SELF[@]}" run "$repo" "$task" --role "$r" --name "$name-${r/@/-}" "${passthru[@]}" >"$BOX/runs/$PROJECT/.$name-${r/@/-}.log" 2>&1 &
+    names+=("$name-${r/@/-}"); sleep 2
   done
   wait
   table "$BOX/runs/$PROJECT" "${names[@]}"
+  [ -n "$score" ] || return 0
+  # Same check for every attempt (a judge, the hidden tests), so picking one is a number, not a reading.
+  echo; echo "score: $score"
+  for n in "${names[@]}"; do
+    git -C "$REPO" rev-parse --verify --quiet "agent/$n^{commit}" >/dev/null || { echo "  $n  no branch"; continue; }
+    echo "  $n  $( (cmd_check "$repo" "agent/$n" --test "$score" --name "$n-score") 2>/dev/null | tail -n 1)"
+  done
 }
 
 # Read-only review of a branch by several reviewers in parallel. The review task is generated: the
@@ -1071,10 +1123,12 @@ cmd_fanout() {
 # it, plus every --spec file.
 cmd_review() {
   local repo="$1" branch="$2"; shift 2
-  local roles="" mode="" against="" focus="" prefix="" prior_spec="" prior_std="" prior_both="" specs=()
+  local roles="" mode="" against="" focus="" prefix="" prior_spec="" prior_std="" prior_both="" specs=() effort="" paths=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --roles) roles="$2"; shift 2 ;;
+      --effort) effort="$2"; shift 2 ;;   # every reviewer without its own role@effort
+      --paths) paths="$2"; shift 2 ;;     # space-separated pathspecs: review only this area (phase-review)
       --review-mode) mode="$2"; shift 2 ;;
       --against) against="$2"; shift 2 ;;
       --focus) focus="$2"; shift 2 ;;
@@ -1095,12 +1149,20 @@ cmd_review() {
   [ -n "$against" ] || against="$(git -C "$REPO" symbolic-ref --short HEAD 2>/dev/null || echo HEAD)"
   local base; base="$(git -C "$REPO" merge-base "$against" "$branch")"
   local stamp; stamp="$(date +%Y%m%d-%H%M%S)"
-  local tdir="$BOX/runs/$PROJECT/.review-$stamp"; mkdir -p "$tdir"
+  # The prefix too: phase-review starts one review per area in the same second.
+  local tdir="$BOX/runs/$PROJECT/.review-$stamp${prefix:+-$prefix}"; mkdir -p "$tdir"
   local body="$tdir/body.md" origin="$BOX/runs/$PROJECT/${branch#agent/}/task-body.md" f
+  local pspec=(); [ -z "$paths" ] || mapfile -t pspec < <(tr ' ' '\n' <<<"$paths" | grep -v '^$')
   [ -f "$origin" ] || [ ${#specs[@]} -gt 0 ] || echo "agent-box: warning: no spec: $branch was not made by agent-box and no --spec was given" >&2
   {
     echo
     echo "Review the change on this branch: \`git diff $base..HEAD\` ($(git -C "$REPO" rev-list --count "$base..$branch") commits)."
+    if [ ${#pspec[@]} -gt 0 ]; then
+      echo
+      echo "This review covers one area of a larger change: report findings in these files only. Read any other"
+      echo "file when a seam needs it (callers, contracts, shared state)."
+      printf -- '- %s\n' "${pspec[@]}"
+    fi
     echo
     git -C "$REPO" log --format='- %h %s' "$base..$branch"
     if [ -f "$origin" ]; then
@@ -1113,7 +1175,7 @@ cmd_review() {
     # file (La-t50 review, 2026-10-17: 7 of 51 shell calls). After the task and spec, so the last
     # instructions a reviewer reads are not the implementer's: with the diff before them, a DeepSeek
     # review of RakunMiniItems #50 implemented the task instead (2026-10-17). REVIEW_DIFF_MAX chars, 0 = never.
-    local diff; diff="$(git -C "$REPO" diff "$base" "$branch" -- 2>/dev/null)"
+    local diff; diff="$(git -C "$REPO" diff "$base" "$branch" -- "${pspec[@]}" 2>/dev/null)"
     if [ -n "$diff" ] && [ "${#diff}" -le "${REVIEW_DIFF_MAX:-30000}" ]; then
       echo; echo "## The diff (\`git diff $base..HEAD\`, already read for you)"; echo
       echo '````diff'; printf '%s\n' "$diff"; echo '````'
@@ -1129,34 +1191,43 @@ cmd_review() {
   local impl="" r var alt
   [ -f "$BOX/runs/$PROJECT/${branch#agent/}/summary.json" ] \
     && impl="$(sed -n 's/.*"model": *"\([^"]*\)".*/\1/p' "$BOX/runs/$PROJECT/${branch#agent/}/summary.json" | head -n 1)"
-  for r in review-spec review-both; do
-    [ -n "$impl" ] && [[ ",$roles," == *,$r,* ]] || continue
-    var="ROLE_${r//-/_}"; alt="${var}_alt"
-    if [ "$(node "$(winpath "$BOX/lib/family.mjs")" use-alt "$impl" "${!var%% *}" "${!alt:-}")" = alt ]; then
-      roles="$(echo ",$roles," | sed "s/,$r,/,$r-alt,/; s/^,//; s/,\$//")"
-      echo "agent-box: $impl wrote this branch and $r is the same family: that review goes to $r-alt (${!alt%% *})" >&2
+  local swapped="" b
+  for r in ${roles//,/ }; do
+    b="${r%%@*}"
+    if [ -n "$impl" ] && { [ "$b" = review-spec ] || [ "$b" = review-both ]; }; then
+      var="ROLE_${b//-/_}"; alt="${var}_alt"
+      if [ "$(node "$(winpath "$BOX/lib/family.mjs")" use-alt "$impl" "${!var%% *}" "${!alt:-}")" = alt ]; then
+        echo "agent-box: $impl wrote this branch and $b is the same family: that review goes to $b-alt (${!alt%% *})" >&2
+        r="$b-alt${r#"$b"}"; b="$b-alt"
+      fi
     fi
+    # --effort: a model whose effort is fixed (antigravity Claude) keeps its own, with a warning.
+    if [ -n "$effort" ] && [[ "$r" != *@* ]]; then
+      if (role_model "$b" "$effort") 2>/dev/null; then r="$r@$effort"; else echo "agent-box: $b keeps its own effort: $effort refused for its model" >&2; fi
+    fi
+    swapped="${swapped:+$swapped,}$r"
   done
+  roles="$swapped"
   # Findings this project already accepted and rejected, as calibration (lib/examples.mjs). Read once,
   # so every reviewer of this round gets the same text; a ledger error never stops the review.
   local examples; examples="$(node "$(winpath "$BOX/lib/examples.mjs")" "$PROJECT" 2>/dev/null || true)"
   local names=() prompt prior
   for r in ${roles//,/ }; do
-    case "$r" in
+    case "${r%%@*}" in
       review-spec|review-spec-alt) prompt="$BOX/lib/ticket/review-spec.md"; prior="$prior_spec" ;;
       review-std) prompt="$BOX/lib/ticket/review-standards.md"; prior="$prior_std" ;;
-      review-both|review-both-alt) prompt="$BOX/lib/ticket/review-both.md"; prior="$prior_both" ;;
+      review-both*) prompt="$BOX/lib/ticket/review-both.md"; prior="$prior_both" ;;
       *) prompt=""; prior="" ;;
     esac
     {
-      echo "---"; echo "files:"; git -C "$REPO" diff --name-only "$base" "$branch" | head -n 40 | sed 's/^/  - /'; echo "---"
+      echo "---"; echo "files:"; git -C "$REPO" diff --name-only "$base" "$branch" -- "${pspec[@]}" | head -n 40 | sed 's/^/  - /'; echo "---"
       [ -n "$prompt" ] && cat "$prompt"
       [ -n "$examples" ] && { echo; printf '%s\n' "$examples"; }
       [ -n "$prior" ] && { echo; cat "$prior"; }
       cat "$body"
-    } >"$tdir/task-$r.md"
-    local n="${prefix:-rv-$stamp}-$r"
-    REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-$r.md" --role "$r" --review --base "$branch" --name "$n" --mode review ${REVIEW_STEPS:+--steps "$REVIEW_STEPS"} >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+    } >"$tdir/task-${r/@/-}.md"
+    local n="${prefix:-rv-$stamp}-${r%%@*}"
+    REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" --name "$n" --mode review ${REVIEW_STEPS:+--steps "$REVIEW_STEPS"} >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     names+=("$n"); sleep 2
   done
   wait
@@ -1202,7 +1273,15 @@ cmd_roles() {
 
 # First-time project files from the repo's manifests (lib/setup.mjs); never overwrites one.
 cmd_setup() {
-  local repo="${1:?usage: setup <repo> [--dry-run]}"; shift
+  local repo="${1:?usage: setup <repo> [--dry-run] [--init-git]}"; shift
+  # --init-git: a plain folder (contest solutions, scratch work) becomes a repo with one commit first.
+  if [ "${1:-}" = --init-git ] || [ "${2:-}" = --init-git ]; then
+    [ -d "$repo" ] || die "not a folder: $repo"
+    if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
+      git -C "$repo" init -q && git -C "$repo" add -A && git -C "$repo" commit -qm "Initial commit (agent-box setup --init-git)"         && echo "agent-box: $repo is a git repo now, one commit"
+    fi
+    set -- $(for a in "$@"; do [ "$a" = --init-git ] || echo "$a"; done)
+  fi
   node "$(winpath "$BOX/lib/setup.mjs")" "$(winpath "$(cd "$(repo_path "$repo")" && pwd)")" "$@"
 }
 
@@ -1258,8 +1337,25 @@ cmd_spec_check() {
       *) die "unknown option $1" ;;
     esac
   done
-  [ -f "$task" ] || die "task file not found: $task"
   load_project "$repo"
+  # A folder: the phase's tickets checked together (spec.md, issues/*.md, any *.md), for gaps and
+  # contradictions between them, before any is published or run. One ticket at a time never sees those.
+  if [ -d "$task" ]; then
+    local set_files=() sf f; mapfile -t set_files < <(find "$task" -name '*.md' -type f | sort)
+    [ ${#set_files[@]} -gt 0 ] || die "no .md files in $task"
+    sf="$(scratch spec-set)"
+    {
+      echo "# Spec check of a whole ticket set (${#set_files[@]} files)"
+      echo
+      echo "These are the tickets of one phase, checked together before any is implemented. Besides each one's"
+      echo "own gaps, find what lies between them: two tickets deciding the same thing differently, a ticket"
+      echo "relying on what no ticket delivers, an order that cannot work, a doc or ADR one of them contradicts."
+      echo "Name the tickets each point concerns."
+      for f in "${set_files[@]}"; do echo; echo "## ${f#"$task"/}"; echo; cat "$f"; done
+    } >"$sf"
+    task="$sf"
+  fi
+  [ -f "$task" ] || die "task file not found: $task"
   [ -n "$name" ] || name="spec-$(date +%Y%m%d-%H%M%S)"
   local out="$BOX/runs/$PROJECT/$name" log="$BOX/runs/$PROJECT/.$name.log"
   SPEC_CHECK=0 AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$task" --role "$role" --review --no-red --no-ask --steps 30 \
@@ -1303,24 +1399,105 @@ cmd_batch() {
 }
 
 # Single-pass advisor: debate, critique or brainstorm with another model. No container, no tools.
+# Several advisors from different families on one question, in parallel, then one merged digest.
+# RakunLoots P10 (2026-10-26): an Opus plan took fixes from DeepSeek and Gemini, and Codex still found a
+# gap in it; one advisor misses what three catch. Members in COUNCIL_ASK_ONLY answer single-pass (no
+# tools: Sol answers only on the Responses API, which OpenCode does not speak); the rest are read-only
+# runs that read the repo to check the plan's claims. COUNCIL_MERGE writes the digest.
+cmd_council() {
+  local repo="$1"; shift
+  local prompt="" members="" name="" eff="" files=() f
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --prompt) prompt="$2"; shift 2 ;;
+      --file) [ -f "$2" ] || die "no such file $2"; files+=("$2"); shift 2 ;;
+      --members) members="${2//,/ }"; shift 2 ;;
+      --name) name="$2"; shift 2 ;;
+      --effort) eff="$2"; shift 2 ;;
+      *) die "unknown option $1" ;;
+    esac
+  done
+  [ -f "$prompt" ] || die "council needs --prompt FILE"
+  load_project "$repo"; need_key
+  members="${members:-${COUNCIL:-advise advise-gemini advise-deepseek}}"
+  [ -n "$name" ] || name="council-$(date +%Y%m%d-%H%M%S)"
+  local dir="$BOX/runs/$PROJECT/_council/$name"; mkdir -p "$dir"
+  cp "$prompt" "$dir/prompt.md"
+  herdr_ok && herdr_ws >/dev/null
+  # The tool members' task: the question and the attached files inline (a plan file is often uncommitted,
+  # so the run's clone would not have it).
+  {
+    echo "# Advise the orchestrator"
+    echo
+    echo "You are one of several independent advisors from different model families. Do not implement."
+    echo "Check every claim the material makes about this repository against the code: paths, functions,"
+    echo "existing behaviour, what the docs and ADRs already decide. Find what is wrong, missing or inconsistent."
+    echo
+    echo "Answer: your recommendation first; then every gap, inconsistency or wrong premise, each with a"
+    echo "severity (critical, high, medium, low) and \`path:line\` evidence; then the strongest argument"
+    echo "against your recommendation; then what you did not verify."
+    echo; echo "## The question"; echo; cat "$prompt"
+    for f in "${files[@]}"; do echo; echo "## Attached: $f"; echo; echo '````'; head -c 60000 "$f"; echo; echo '````'; done
+  } >"$dir/task.md"
+  local m b names=()
+  for m in $members; do
+    b="${m%%@*}"
+    if [[ " ${COUNCIL_ASK_ONLY:-advise} " == *" $b "* ]]; then
+      local fa=(); for f in "${files[@]}"; do fa+=(--file "$f"); done
+      "${SELF[@]}" ask "$repo" --role "$m" ${eff:+--effort "$eff"} --prompt "$dir/task.md" >"$dir/$b.md" 2>"$dir/$b.log" &
+    else
+      ( AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red \
+          --preamble explore --mode council --name "$name-$b" --steps "${COUNCIL_STEPS:-60}" >"$dir/$b.log" 2>&1
+        cp "$BOX/runs/$PROJECT/$name-$b/final.md" "$dir/$b.md" 2>/dev/null || true ) &
+    fi
+    names+=("$b"); sleep 2
+  done
+  wait
+  # A tool member that died without a word gets one more try, alone.
+  for m in $members; do
+    b="${m%%@*}"
+    [[ " ${COUNCIL_ASK_ONLY:-advise} " == *" $b "* ]] || [ -s "$dir/$b.md" ] || {
+      echo "council: $b gave no answer; trying once more" >&2
+      AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red         --preamble explore --mode council --name "$name-$b-2" --steps "${COUNCIL_STEPS:-60}" >>"$dir/$b.log" 2>&1 || true
+      cp "$BOX/runs/$PROJECT/$name-$b-2/final.md" "$dir/$b.md" 2>/dev/null || true
+    }
+  done
+  local answers=() n
+  for n in "${names[@]}"; do
+    if [ -s "$dir/$n.md" ]; then answers+=("$dir/$n.md"); echo "council: $n answered ($dir/$n.md)"
+    else echo "council: $n gave no answer; see $dir/$n.log" >&2; fi
+  done
+  [ ${#answers[@]} -gt 0 ] || die "no council member answered"
+  {
+    echo "Merge these ${#answers[@]} independent advisors' answers to the question below into one digest."
+    echo "Sections: ## Agreed (two or more advisors), ## Unique (one advisor), ## Contradicting (each side)."
+    echo "Tag every item with its advisors in brackets, by file name: [advise], [advise-gemini]."
+    echo "Keep every critical, high and medium item, with its evidence. Drop nothing for being unique:"
+    echo "a gap only one advisor saw is the reason for asking several. End with ## Recommendation."
+    echo; echo "## The question"; echo; cat "$prompt"
+  } >"$dir/merge-prompt.md"
+  local fa=(); for f in "${answers[@]}"; do fa+=(--file "$f"); done
+  "${SELF[@]}" ask "$repo" --role "${COUNCIL_MERGE:-advise}" --prompt "$dir/merge-prompt.md" "${fa[@]}" >"$dir/digest.md" 2>"$dir/merge.log" \
+    || { echo "council: the merge failed ($dir/merge.log); the answers stand alone" >&2; cat "${answers[@]}"; return 1; }
+  echo; cat "$dir/digest.md"; echo; echo "council: digest $dir/digest.md"
+}
+
 cmd_ask() {
   local repo="$1"; shift
-  local role="advise" model="" prompt="-" files=()
+  local role="advise" model="" prompt="-" files=() eff=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --role) role="$2"; shift 2 ;;
       --model) model="$2"; shift 2 ;;
+      --effort) eff="$2"; shift 2 ;;
       --prompt) prompt="$2"; shift 2 ;;
       --file) files+=("$(winpath "$2")"); shift 2 ;;
       *) die "unknown option $1" ;;
     esac
   done
   load_project "$repo"; need_key
-  if [ -z "$model" ]; then
-    local var="ROLE_${role//-/_}"
-    [ -n "${!var:-}" ] || die "unknown role $role"
-    read -r model EFFORT <<<"${!var}"
-  fi
+  if [ -z "$model" ]; then role_model "$role" "$eff"; else MODEL="$model" EFFORT=""; [ -z "$eff" ] || set_effort "$eff"; fi
+  model="$MODEL"; role="${role%%@*}"
   mkdir -p "$BOX/runs/$PROJECT/ask"
   local out; out="$BOX/runs/$PROJECT/ask/$(date +%Y%m%d-%H%M%S)-$role.md"
   [ "$prompt" = - ] || prompt="$(winpath "$prompt")"
@@ -1331,6 +1508,10 @@ cmd_ask() {
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
   ask) shift; cmd_ask "$@" ;;
+  council) shift; cmd_council "$@" ;;
+  phase-review) shift; node "$(winpath "$BOX/lib/phase.mjs")" review "$(winpath "$(cd "$(repo_path "${1:?usage: phase-review <repo> --base REF}")" && pwd)")" "${@:2}" ;;
+  phase-close) shift; node "$(winpath "$BOX/lib/phase.mjs")" close "$(winpath "$(cd "$(repo_path "${1:?usage: phase-close <repo> --base REF}")" && pwd)")" "${@:2}" ;;
+  status) shift; node "$(winpath "$BOX/lib/phase.mjs")" status "$(winpath "$(cd "$(repo_path "${1:?usage: status <repo>}")" && pwd)")" ;;
   fanout) shift; cmd_fanout "$@" ;;
   review) shift; cmd_review "$@" ;;
   models) shift; cmd_models "$@" ;;
