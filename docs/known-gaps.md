@@ -194,3 +194,11 @@ sets 5, and the skill and README say 5. With the shipped config the cap is 5; th
 applies if the line is removed.
 
 **Workaround.** None needed today. Better: one default, in one place.
+
+### 12. `council` with no arguments crashes instead of printing usage
+
+**Seen.** `delegate.sh council` (2026-10-28) printed `./delegate.sh: line 1408: $1: unbound variable`.
+`cmd_council` reads `local repo="$1"` under `set -u` before any argument check.
+
+**Workaround.** Read `cmd_council` for its options. Better: every command with no arguments prints
+its usage, as R12 asks of `note`.
