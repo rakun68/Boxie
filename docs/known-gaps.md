@@ -202,3 +202,35 @@ applies if the line is removed.
 
 **Workaround.** Read `cmd_council` for its options. Better: every command with no arguments prints
 its usage, as R12 asks of `note`.
+
+### 13. `ask` dies at 300 s while its own timeout is 15 minutes
+
+**Seen.** The Lykos P18 council (2026-10-28): the `advise` member (agentrouter/gpt-6.1-sol, 35 KB
+task) failed twice, then the merge failed, each with `fetch failed` / `UND_ERR_HEADERS_TIMEOUT`
+(`runs/lykos/_council/p18-council/advise.log`, `p18-council-readers/merge.log`).
+
+**Why.** `lib/ask.mjs:51` sets `AbortSignal.timeout(15 * 60 * 1000)`, but Node's fetch (undici) has
+its own `headersTimeout` of 300 s. A model that thinks longer than 5 minutes before sending headers
+is cut off, whatever the abort signal says.
+
+**Workaround.** A shorter task, or a lower effort. Better: pass an undici `Agent` with
+`headersTimeout` and `bodyTimeout` matching the 15 minutes.
+
+### 14. A council whose merge fails leaves no digest, and the members' work looks lost
+
+**Seen.** Same run: both repo-reading members wrote full reports, the merge (Sol) failed, `digest.md`
+is empty and the command exits 1. Only one member's report reached the log tail.
+
+**Workaround.** Read `advise-*.md` in the council folder. Better: on a merge failure, write the
+members' reports into `digest.md` under their names and say the merge failed.
+
+### 15. The Podman VM dropped during a council launch
+
+**Seen.** 2026-10-28 18:54:35, first P18 council: the DeepSeek member's container lost Podman
+(`EOF`, then `connection forcibly closed`), the Gemini member then saw `no image agent-box:latest`
+(the image existed after a restart), and `podman machine list` showed the VM stopped. The daily
+auto-gc ran at the same launch. The maturity journal records a member dying 3 s after the auto-gc on
+2026-10-27. The rerun with `AUTO_GC=0` did not crash. Two occurrences, cause unproven.
+
+**Workaround.** `podman machine start`, rerun with `AUTO_GC=0`. Better: never run the auto-gc's image
+prune while a launch is starting containers.
