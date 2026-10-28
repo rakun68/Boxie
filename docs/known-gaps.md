@@ -264,3 +264,16 @@ agent-box cannot have its agent-box claims checked by the council.
 
 **Workaround.** Paste the agent-box excerpts the claims rest on into a `--file`. Better: a
 `--with-box` option that mounts agent-box's `lib/` and `docs/` read-only into members.
+
+### 19. A prompt over 128 KB fails at launch with "Argument list too long"
+
+**Seen.** Lykos P18 decisions council round 4, 2026-10-28: every member exited 126 within 7 s,
+`opencode.log`: `/usr/local/bin/run-task.sh: line 222: /usr/bin/timeout: Argument list too long`.
+`prompt.md` was 145,896 bytes (the 83 KB task with six `--file`s plus the 59 KB context pack).
+`image/run-task.sh:222-223` passes the whole prompt as one argument to `opencode run`; Linux caps a
+single argument at 128 KB (MAX_ARG_STRLEN). The council then reported "no council member answered", and
+the run's verdict was `error / fix_environment`, which names neither the cause nor the size.
+
+**Workaround.** Fewer or shorter `--file`s; keep task plus pack under about 120 KB.
+Better: write the prompt to a file inside the container and pass it by path (or stdin), and check the
+size before launch with a clear error.
