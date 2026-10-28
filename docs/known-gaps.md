@@ -234,3 +234,33 @@ auto-gc ran at the same launch. The maturity journal records a member dying 3 s 
 
 **Workaround.** `podman machine start`, rerun with `AUTO_GC=0`. Better: never run the auto-gc's image
 prune while a launch is starting containers.
+
+### 16. The DeepSeek merger spends its whole output on reasoning and writes no digest
+
+**Seen.** Lykos P18 decisions council, 2026-10-28 (`runs/lykos/_council/p18-decisions-1/merge.log`):
+`ask failed (200)`, `finish_reason: "length"`, `content: ""`, the reasoning cut off mid-sentence. The
+merge prompt carried three member reports (about 41 KB). `digest.md` is empty and the command exits 1
+(gap 14 again, with a new cause).
+
+**Workaround.** Read `advise*.md` and merge by hand. Better: give the merger a max output large enough
+for reasoning plus the digest, or a lower reasoning effort, and treat `finish_reason: length` with empty
+content as a failure that retries once with a larger limit.
+
+### 17. A member whose last message is a question counts as an answer
+
+**Seen.** Same day, two councils: `p18-council/advise-deepseek.md` (180 bytes) and
+`p18-decisions-1/advise-gemini.md` (282 bytes) hold only a closing offer ("Do you want the answer
+saved...", "Would you like to draft revisions..."). The council logged both as `answered`; the real
+report stayed in the run's transcript, not in the member file.
+
+**Workaround.** Check each member file's size; read the run's log for the report. Better: take the
+member's longest final assistant message, or reject an answer under a size floor and retry once.
+
+### 18. Repo-reading members cannot read agent-box itself
+
+**Seen.** Same council: Sol and DeepSeek both reported `C:/Workspace/Tools/agent-box/lib/*.mjs` and
+`docs/known-gaps.md` absent; only the target repo is mounted. A plan that compares a project with
+agent-box cannot have its agent-box claims checked by the council.
+
+**Workaround.** Paste the agent-box excerpts the claims rest on into a `--file`. Better: a
+`--with-box` option that mounts agent-box's `lib/` and `docs/` read-only into members.
