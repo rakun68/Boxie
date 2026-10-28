@@ -1,7 +1,10 @@
 // Writes ~/.config/opencode/opencode.json for one run. Inputs are environment variables set by
 // delegate.sh; model limits come from /tmp/models.json (OmniRoute's list) when OmniRoute answered.
 //
-//   MODEL        OmniRoute model id for the primary agent
+//   MODEL        model id for the primary agent: an OmniRoute id, or opencode/<id> for OpenCode's own
+//                provider (its free models answer only the real OpenCode client, no key)
+//   FREE_FALLBACK OmniRoute id registered beside an opencode/* MODEL: run-task.sh switches to it when
+//                the free model hits its limit
 //   EFFORT       optional reasoning effort (low|medium|high) sent as reasoning_effort. OmniRoute drops it
 //                for antigravity/claude-* (research/opencode-customization.md §5), so roles leave it empty there
 //   REVIEW       1 = the `reviewer` agent (cannot edit the repo); otherwise the `worker` agent
@@ -26,13 +29,22 @@ let list = [];
 try { list = JSON.parse(fs.readFileSync(env.MODELS_JSON || "/tmp/models.json", "utf8")).data || []; } catch {}
 const OUT = 32000;
 const compactAt = Number(env.COMPACT_AT || 0) > 0 ? Number(env.COMPACT_AT) : env.COMPACT_AT === "0" ? 0 : 150000;
-const limitOf = (id) => {
-  const real = Number(list.find((m) => m.id === id)?.context_length) || 1000000;
+const limitOf = (id, dflt = 1000000) => {
+  const real = Number(list.find((m) => m.id === id)?.context_length) || dflt;
   return { context: compactAt > 0 ? Math.min(real, compactAt + OUT) : real, output: OUT };
 };
-const models = {};
-for (const id of [model, env.SCOUT_MODEL]) if (id) models[id] = { name: id, limit: limitOf(id) };
-if (env.EFFORT) models[model].options = { reasoningEffort: env.EFFORT };
+// opencode/* ids are OpenCode's own provider; the entry only overrides limits and effort, OpenCode's
+// catalog supplies the rest. Everything else is an OmniRoute model.
+const own = (id) => id.startsWith("opencode/");
+const ocId = (id) => (own(id) ? id : `omniroute/${id}`);
+const models = {}, ownModels = {};
+const fallback = own(model || "") ? env.FREE_FALLBACK : "";
+for (const id of [model, env.SCOUT_MODEL, fallback]) {
+  if (!id) continue;
+  if (own(id)) ownModels[id.slice("opencode/".length)] = { limit: limitOf(id, 200000) }; // models.dev: 200k for both free models (2026-10-28)
+  else models[id] = { name: id, limit: limitOf(id) };
+}
+if (env.EFFORT) (own(model) ? ownModels[model.slice(9)] : models[model]).options = { reasoningEffort: env.EFFORT };
 
 // OpenCode permission patterns: paths relative to the worktree, `*` also matches `/`, last match wins.
 const toPattern = (glob) => glob.replace(/\*\*\/?/g, "*");
@@ -50,7 +62,7 @@ const agent = {
   worker: {
     mode: "primary",
     description: "Implements the task in /work/repo and commits it",
-    model: `omniroute/${model}`,
+    model: ocId(model),
     permission: { ...common, edit },
     // Step budget from the task's `steps:`; past it OpenCode asks the model for its final answer.
     ...(Number(env.STEPS) > 0 ? { steps: Number(env.STEPS) } : {}),
@@ -58,7 +70,7 @@ const agent = {
   reviewer: {
     mode: "primary",
     description: "Reviews the repository read-only; scratch files go under /tmp",
-    model: `omniroute/${model}`,
+    model: ocId(model),
     permission: { ...common, edit: { "*": "deny" } },
   },
 };
@@ -67,7 +79,7 @@ if (scout) {
     mode: "subagent",
     description:
       "Fast, cheap, read-only code search. Give it a precise question (where is X defined, who calls Y, which tests cover Z, what does doc D say about W); it returns file:line evidence. Use it instead of reading many files yourself. Independent questions: start several scout tasks in the same turn; they run in parallel.",
-    model: `omniroute/${scout}`,
+    model: ocId(scout),
     steps: 30,
     permission: { edit: "deny", webfetch: "deny", task: "deny", skill: { "*": "deny" } },
     tools: { "orchestrator_*": false },
@@ -86,7 +98,7 @@ const cfg = {
   // COMPACT_KEEP: tokens of the newest work kept verbatim (OpenCode keeps at most 15000 by default; at that,
   // RakunMiniItems #50 re-read files 89 times across 5 compactions, 2026-10-17).
   compaction: { auto: compactAt > 0, prune: compactAt > 0, ...(compactAt > 0 ? { preserve_recent_tokens: Number(env.COMPACT_KEEP || 40000) } : {}) },
-  model: `omniroute/${model}`,
+  model: ocId(model),
   default_agent: review ? "reviewer" : "worker",
   provider: {
     omniroute: {
@@ -95,6 +107,7 @@ const cfg = {
       options: { baseURL: "{env:OMNIROUTE_BASE_URL}", apiKey: "{env:OMNIROUTE_API_KEY}" },
       models,
     },
+    ...(Object.keys(ownModels).length ? { opencode: { models: ownModels } } : {}),
   },
   agent,
   permission: { webfetch: web },

@@ -71,8 +71,8 @@ prep() {
   done
   # A model missing from the key's list is named in the log; the run goes on (a combo may not be
   # listed). A model that answers nothing is caught on the host (lib/ledger.mjs noOutput).
-  jq -e --arg m "$MODEL" '[.data[]?.id] | index($m)' /tmp/models.json >/dev/null 2>&1 \
-    || log "warning: model $MODEL is not in the OmniRoute key's model list"
+  case "$MODEL" in opencode/*) ;; *) jq -e --arg m "$MODEL" '[.data[]?.id] | index($m)' /tmp/models.json >/dev/null 2>&1 \
+    || log "warning: model $MODEL is not in the OmniRoute key's model list" ;; esac
   node /opt/agent-box/make-config.mjs >/tmp/prep.agent || { echo config >/tmp/prep.status; return; }
   # A local OpenCode server, so `delegate.sh tui` (herdr) can attach the real OpenCode TUI to this
   # worker's session. The worker's `run` talks to it; without it, `run` starts its own in-process.
@@ -82,6 +82,10 @@ prep() {
   fi
   echo ok >/tmp/prep.status
 }
+# OpenCode's id for a model: opencode/* is OpenCode's own provider (its free models, no key: they
+# answer only the real OpenCode client, 2026-10-28); everything else goes through OmniRoute.
+oc_model() { case "$1" in opencode/*) echo "$1" ;; *) echo "omniroute/$1" ;; esac; }
+OC_MODEL="$(oc_model "${MODEL:-}")" fell_back_from=""
 if [ "${SKIP_AGENT:-0}" != "1" ]; then
   : "${MODEL:?}" "${OMNIROUTE_API_KEY:?}" "${OMNIROUTE_BASE_URL:?}"
   mkdir -p ~/.config/opencode
@@ -212,15 +216,35 @@ short and cached, and source reads faster than bytecode.'
   [ -n "${VARIANT:-}" ] && variant_args=(--variant "$VARIANT")
   # STEPS caps each prompt's steps (OpenCode's agent `steps`); the harness's follow-ups (cut resume,
   # self-check, auto-fix, report) are prompts of their own, so a run's total can exceed it.
-  log "agent: $agent_name on omniroute/$MODEL${EFFORT:+ ($EFFORT)}${SCOUT_MODEL:+, scout $SCOUT_MODEL}, timeout ${TIMEOUT_MIN}m${STEPS:+, at most $STEPS steps per prompt}${CONTINUE_SESSION:+, resuming $CONTINUE_SESSION}"
+  log "agent: $agent_name on $OC_MODEL${EFFORT:+ ($EFFORT)}${SCOUT_MODEL:+, scout $SCOUT_MODEL}, timeout ${TIMEOUT_MIN}m${STEPS:+, at most $STEPS steps per prompt}${CONTINUE_SESSION:+, resuming $CONTINUE_SESSION}"
   phase agent
   t0=$(date +%s)
   timeout --kill-after=30 "${TIMEOUT_MIN}m" \
-    opencode run --auto --format json --agent "$agent_name" -m "omniroute/$MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" "$prompt" \
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" "$prompt" \
     >"$OUT/events.jsonl" 2>"$OUT/opencode.log"
   agent_exit=$?
   agent_s=$(( $(date +%s) - t0 ))
   log "agent exit $agent_exit"
+  # A free model out of quota (FreeUsageLimitError) or rate-limited: FREE_FALLBACK (an OmniRoute id,
+  # registered by make-config) takes over the same session, or starts the task afresh without one.
+  if [ -n "${FREE_FALLBACK:-}" ] && [[ "$MODEL" == opencode/* ]] \
+     && { grep -h '^{"type":"error"' "$OUT/events.jsonl" 2>/dev/null; cat "$OUT/opencode.log" 2>/dev/null; } \
+        | grep -qiE 'FreeUsageLimitError|free usage limit|rate.?limit|too many requests'; then
+    fell_back_from="$MODEL" MODEL="$FREE_FALLBACK" OC_MODEL="omniroute/$FREE_FALLBACK"
+    fb_sid="$(jq -r 'select(.sessionID) | .sessionID' "$OUT/events.jsonl" 2>/dev/null | tail -n 1)"
+    log "$fell_back_from hit its free limit: going on with $OC_MODEL${fb_sid:+ in session $fb_sid}"
+    if [ -n "$fb_sid" ]; then
+      fb_args=(--session "$fb_sid")
+      fb_msg="The previous model hit a usage limit; you replace it. Continue the task from where the session stands."
+    else fb_args=("${session_args[@]}") fb_msg="$prompt"; fi
+    t0=$(date +%s)
+    timeout --kill-after=30 "${TIMEOUT_MIN}m" \
+      opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${fb_args[@]}" --title "$BRANCH" "$fb_msg" \
+      >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
+    agent_exit=$?
+    agent_s=$(( agent_s + $(date +%s) - t0 ))
+    log "fallback: agent exit $agent_exit"
+  fi
 fi
 
 # The worker's last message: BLOCKED line, report block, review findings block. The report is a claim;
@@ -277,7 +301,7 @@ resume_cut() {
     [ "${REVIEW:-0}" = 1 ] && msg='Your last turn was cut off at the output limit while you were still thinking. Stop analysing: write your review now, ending with the findings block.'
     local t0; t0=$(date +%s)
     timeout --kill-after=30 "${AUTOFIX_MIN:-15}m" \
-      opencode run --auto --format json --agent "$agent_name" -m "omniroute/$MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" "$msg" \
+      opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" "$msg" \
       >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
     agent_exit=$?
     agent_s=$(( agent_s + $(date +%s) - t0 ))
@@ -329,7 +353,7 @@ EOF
   cp "$OUT/final.md" "$OUT/final-before-check.md" 2>/dev/null; cp "$OUT/report.json" "$OUT/report-before-check.json" 2>/dev/null
   t0=$(date +%s)
   timeout --kill-after=30 "${AUTOFIX_MIN:-15}m" \
-    opencode run --auto --format json --agent "$agent_name" -m "omniroute/$MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" "$msg" \
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" "$msg" \
     >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
   agent_exit=$?
   agent_s=$(( agent_s + $(date +%s) - t0 ))
@@ -384,7 +408,7 @@ Your earlier block could not be read as JSON. It began: $pe"
   fi
   t0=$(date +%s)
   timeout --kill-after=30 "${rmin}m" \
-    opencode run --auto --format json --agent "$agent_name" -m "omniroute/$MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" \
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" \
     "$rmsg" >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
   agent_s=$(( agent_s + $(date +%s) - t0 ))
   # The block is read from this reply; the message before it stays the final message.
@@ -422,7 +446,7 @@ if [ "${REVIEW:-0}" = 1 ] && [ -z "${PREAMBLE:-}" ] && [ "$agent_exit" = 0 ] && 
   fi
   t0=$(date +%s)
   timeout --kill-after=30 "${rmin}m" \
-    opencode run --auto --format json --agent "$agent_name" -m "omniroute/$MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" \
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" \
     "$rmsg" >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
   agent_s=$(( agent_s + $(date +%s) - t0 ))
   cp "$OUT/final.md" "$OUT/final-before-report.md" 2>/dev/null
@@ -502,7 +526,7 @@ while [ "$test_exit" -gt 0 ] && [ "$autofix" -lt "${AUTOFIX:-1}" ] && [ "${REVIE
   log "autofix $autofix: resuming $session_id with the failing test tail"
   t0=$(date +%s)
   timeout --kill-after=30 "${AUTOFIX_MIN:-15}m" \
-    opencode run --auto --format json --agent "$agent_name" -m "omniroute/$MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" "$msg" \
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" "$msg" \
     >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
   agent_exit=$?
   agent_s=$(( agent_s + $(date +%s) - t0 ))
@@ -528,7 +552,7 @@ fi
 [ -s "$OUT/report.json" ] || echo null >"$OUT/report.json"
 recovered="$(grep -c '"recovered":true' "$OUT/events.jsonl" 2>/dev/null)"; recovered="${recovered:-0}"
 jq -n \
-  --arg branch "$BRANCH" --arg base "$BASE_SHA" --arg head "$(git rev-parse HEAD)" --arg model "${MODEL:-}" \
+  --arg branch "$BRANCH" --arg base "$BASE_SHA" --arg head "$(git rev-parse HEAD)" --arg model "${MODEL:-}" --arg fellback "$fell_back_from" \
   --argjson commits "$commits" --argjson leftovers "$leftovers" \
   --argjson setup "$setup_exit" --argjson agent "$agent_exit" --argjson test "$test_exit" --argjson first_test "$first_test_exit" \
   --argjson seconds "$(( $(date +%s) - started ))" --argjson setup_s "$setup_s" --argjson agent_s "$agent_s" --argjson test_s "$test_s" \
@@ -540,7 +564,7 @@ jq -n \
   --argjson recovered "$recovered" --argjson selfcheck "$self_checked" --argjson repask "$report_asked" \
   --slurpfile report "$OUT/report.json" \
   --arg blocked "$blocked" --argjson sealed "$(printf '%s\n' "${sealed_touched[@]}" | sort -u | jq -R . | jq -s 'map(select(. != ""))')" \
-  '{branch:$branch, base:$base, head:$head, model:$model, commits:$commits, leftovers_committed:($leftovers==1),
+  '{branch:$branch, base:$base, head:$head, model:$model, fell_back_from:(if $fellback == "" then null else $fellback end), commits:$commits, leftovers_committed:($leftovers==1),
     setup_exit:$setup, agent_exit:$agent, test_exit:$test, first_test_exit:$first_test, seconds:$seconds,
     phase_seconds:{setup:$setup_s, agent:$agent_s, test:$test_s},
     blocked:(if $blocked == "" then null else $blocked end), sealed_violation:$sealed,

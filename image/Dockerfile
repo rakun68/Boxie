@@ -3,7 +3,7 @@
 # image, built by `delegate.sh build <repo>`. make, g++ and python3 stay: node-gyp builds need them.
 FROM node:24-bookworm
 
-ARG OPENCODE_VERSION=1.19.0
+ARG OPENCODE_VERSION=1.19.4
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git jq ripgrep python3 make g++ ca-certificates curl \

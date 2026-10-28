@@ -110,11 +110,13 @@ Usage: delegate.sh <command> ...
                                  With herdr running, the loop opens it in a tab of its own
   ask     <repo> [--role advise|advise-alt | --model M] [--effort LEVEL] [--prompt FILE] [--file CTX ...]
                                  One-pass advisor (debate/critique), no tools; prompt from FILE or stdin.
-                                 advise is Sol 6.1 (the Responses API when chat completions refuse)
-  council  <repo> --prompt FILE [--file CTX ...] [--members a,b,c] [--effort LEVEL] [--name N]
-                                 COUNCIL's advisors in parallel (Sol single-pass; Gemini and DeepSeek
-                                 read-only runs that check the repo), merged into one digest: agreed,
+                                 advise is Sol 6.1 (cx/; the Responses API when chat completions refuse)
+  council  <repo> --prompt FILE [--file CTX ...] [--members a,b,c] [--effort LEVEL] [--name N] [--merge R]
+                                 COUNCIL's advisors in parallel (Sol, Gemini and DeepSeek: read-only
+                                 runs that check the repo), merged into one digest: agreed,
                                  unique, contradicting, each item tagged. runs/<p>/_council/<name>/
+                                 --merge: the merger, a role (merge, advise@high) or an OmniRoute
+                                 model id; default COUNCIL_MERGE
   phase-review <repo> --base REF [--head REF] [--name N] [--spec FILE ...] [--max-rounds N] [--roles a,b,c]
                                  The whole phase diff, split into areas under REVIEW_DIFF_MAX, one family
                                  per round (PHASE_REVIEW_ROLES, rotating) until two rounds in a row from
@@ -485,6 +487,8 @@ launch() {
   export TUI ROLE="${ROLE:-}" AUTOFIX="${AUTOFIX:-1}" HIDDEN="${HIDDEN_DIR:+1}" PREAMBLE="${PREAMBLE:-}"
   # Context management (image/make-config.mjs) and the self-check turn (run-task.sh), from the conf files.
   export COMPACT_AT="${COMPACT_AT:-}" COMPACT_KEEP="${COMPACT_KEEP:-}" SELF_CHECK="${SELF_CHECK:-}"
+  # The paid model a free opencode/* model hands over to at its limit (image/run-task.sh).
+  export FREE_FALLBACK="${FREE_FALLBACK:-}"
   local host_ip; host_ip="$(host_address)"
   local net_args=(); [ -n "${AGENT_BOX_NETWORK:-}" ] && net_args=(--network "$AGENT_BOX_NETWORK")
   export BRANCH="$branch" BASE_SHA="$base_sha" START_SHA="$start_sha" SKIP_AGENT="$skip_agent"
@@ -492,7 +496,8 @@ launch() {
   # so the round's values go to `exec` explicitly (the OmniRoute key is already in it, never on a command line).
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
-    AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S)
+    AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S
+    FREE_FALLBACK)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then
@@ -1402,11 +1407,11 @@ cmd_batch() {
 # Several advisors from different families on one question, in parallel, then one merged digest.
 # RakunLoots P10 (2026-10-26): an Opus plan took fixes from DeepSeek and Gemini, and Codex still found a
 # gap in it; one advisor misses what three catch. Members in COUNCIL_ASK_ONLY answer single-pass (no
-# tools: Sol answers only on the Responses API, which OpenCode does not speak); the rest are read-only
+# tools; empty by default: cx/gpt-6.1-sol calls tools through OpenCode, 2026-10-28); the rest are read-only
 # runs that read the repo to check the plan's claims. COUNCIL_MERGE writes the digest.
 cmd_council() {
   local repo="$1"; shift
-  local prompt="" members="" name="" eff="" files=() f
+  local prompt="" members="" name="" eff="" merge="" files=() f
   while [ $# -gt 0 ]; do
     case "$1" in
       --prompt) prompt="$2"; shift 2 ;;
@@ -1414,6 +1419,7 @@ cmd_council() {
       --members) members="${2//,/ }"; shift 2 ;;
       --name) name="$2"; shift 2 ;;
       --effort) eff="$2"; shift 2 ;;
+      --merge) merge="$2"; shift 2 ;;
       *) die "unknown option $1" ;;
     esac
   done
@@ -1442,7 +1448,7 @@ cmd_council() {
   local m b names=()
   for m in $members; do
     b="${m%%@*}"
-    if [[ " ${COUNCIL_ASK_ONLY:-advise} " == *" $b "* ]]; then
+    if [[ " ${COUNCIL_ASK_ONLY-advise} " == *" $b "* ]]; then
       local fa=(); for f in "${files[@]}"; do fa+=(--file "$f"); done
       "${SELF[@]}" ask "$repo" --role "$m" ${eff:+--effort "$eff"} --prompt "$dir/task.md" >"$dir/$b.md" 2>"$dir/$b.log" &
     else
@@ -1456,7 +1462,7 @@ cmd_council() {
   # A tool member that died without a word gets one more try, alone.
   for m in $members; do
     b="${m%%@*}"
-    [[ " ${COUNCIL_ASK_ONLY:-advise} " == *" $b "* ]] || [ -s "$dir/$b.md" ] || {
+    [[ " ${COUNCIL_ASK_ONLY-advise} " == *" $b "* ]] || [ -s "$dir/$b.md" ] || {
       echo "council: $b gave no answer; trying once more" >&2
       AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red         --preamble explore --mode council --name "$name-$b-2" --steps "${COUNCIL_STEPS:-60}" >>"$dir/$b.log" 2>&1 || true
       cp "$BOX/runs/$PROJECT/$name-$b-2/final.md" "$dir/$b.md" 2>/dev/null || true
@@ -1474,10 +1480,19 @@ cmd_council() {
     echo "Tag every item with its advisors in brackets, by file name: [advise], [advise-gemini]."
     echo "Keep every critical, high and medium item, with its evidence. Drop nothing for being unique:"
     echo "a gap only one advisor saw is the reason for asking several. End with ## Recommendation."
+    echo
+    echo "Be impartial. You may be the same model as one of the advisors: give its answer no more weight"
+    echo "than the others, and never side with an answer for its model, its length or its confidence."
+    echo "Weigh each claim by its evidence alone (a cited path:line beats an assertion). In ## Contradicting,"
+    echo "state each side as its advisor argued it, then name which side the evidence supports, or say it"
+    echo "is undecided. The recommendation follows the evidence, not the majority."
     echo; echo "## The question"; echo; cat "$prompt"
   } >"$dir/merge-prompt.md"
   local fa=(); for f in "${answers[@]}"; do fa+=(--file "$f"); done
-  "${SELF[@]}" ask "$repo" --role "${COUNCIL_MERGE:-advise}" --prompt "$dir/merge-prompt.md" "${fa[@]}" >"$dir/digest.md" 2>"$dir/merge.log" \
+  # The merger: a role, or a model id (it has a slash). Single-pass: it only reads the answers.
+  merge="${merge:-${COUNCIL_MERGE:-merge}}"
+  local mergeby=(--role "$merge"); [[ "$merge" == */* ]] && mergeby=(--model "$merge")
+  "${SELF[@]}" ask "$repo" "${mergeby[@]}" --prompt "$dir/merge-prompt.md" "${fa[@]}" >"$dir/digest.md" 2>"$dir/merge.log" \
     || { echo "council: the merge failed ($dir/merge.log); the answers stand alone" >&2; cat "${answers[@]}"; return 1; }
   echo; cat "$dir/digest.md"; echo; echo "council: digest $dir/digest.md"
 }
@@ -1498,6 +1513,7 @@ cmd_ask() {
   load_project "$repo"; need_key
   if [ -z "$model" ]; then role_model "$role" "$eff"; else MODEL="$model" EFFORT=""; [ -z "$eff" ] || set_effort "$eff"; fi
   model="$MODEL"; role="${role%%@*}"
+  [[ "$model" != opencode/* ]] || die "$model is OpenCode's own provider: it answers only inside a run, not in ask"
   mkdir -p "$BOX/runs/$PROJECT/ask"
   local out; out="$BOX/runs/$PROJECT/ask/$(date +%Y%m%d-%H%M%S)-$role.md"
   [ "$prompt" = - ] || prompt="$(winpath "$prompt")"

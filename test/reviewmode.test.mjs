@@ -48,11 +48,11 @@ test("delegate.sh roles: the default stack, and the review mode a project sets",
   const row = (n) => out.split("\n").find((l) => l.split(/\s+/)[0] === n)?.split(/\s+/);
   assert.deepEqual(row("REVIEW_MODE"), ["REVIEW_MODE", "project", "both"]);
   assert.equal(row("LOOP_MAX_ROUNDS")?.[2], "5");
-  assert.equal(row("adjudicate")?.[2], "gemini-3.8-flash-tiered");
-  assert.equal(row("advise")?.[2], "agentrouter/gpt-6.1-sol");
-  assert.equal(row("review-spec")?.[2], "antigravity/claude-opus-4-6-thinking-high");
-  assert.deepEqual(row("review-std")?.slice(2), ["deepseek/deepseek-flash", "high"]);
-  assert.deepEqual(row("review-both")?.slice(2), ["deepseek/deepseek-flash", "high"]);
+  assert.equal(row("adjudicate")?.[2], "antigravity/gemini-3.8-flash-high");
+  assert.equal(row("advise")?.[2], "cx/gpt-6.1-sol-high");
+  assert.equal(row("review-spec")?.[2], "antigravity/claude-opus-4-6-thinking");
+  assert.deepEqual(row("review-std")?.slice(2), ["opencode/deepseek-v4.1-flash-free"]);
+  assert.deepEqual(row("review-both")?.slice(2), ["deepseek/deepseek-flash-high"]);
   assert.equal(row("implement-hard")?.[2], "deepseek/deepseek-flash-max");
 });
 

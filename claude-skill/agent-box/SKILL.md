@@ -173,7 +173,7 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
 1. Write the task with its spec (a feature also gets a failing acceptance test, sealed and confirmed
    red; commit it on a side branch with `git hash-object`/`commit-tree`).
 2. `run --role implement` (Gemini 3.8 Flash high). Trivial edits whose place is known: `--role quick`
-   (DeepSeek, 6-8 steps). A run that will go through `loop`: start it with `AGENT_BOX_PARK=1`, so the
+   (free DeepSeek V4.1 Flash on OpenCode's own provider, 30-160 s on the light bench). A run that will go through `loop`: start it with `AGENT_BOX_PARK=1`, so the
    first fix round runs in its container (the loop parks its own rounds itself).
 3. Act on `next`. A gate failure: `continue` with the failure once; the same failure twice: rerun
    with `--role implement-hard` (DeepSeek V4.1 Flash max, a different family) with the failure
@@ -191,7 +191,7 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
    the worker and every reviewer. `--no-spec-check` skips it. (RakunMiniItems #49: the task asked for
    a listener ADR 0003 gives to MythicLib; the check flags it, the review loop found it after the code.)
    Round 1, the only full review, by the project's review mode: `split`, review-spec (Opus) and
-   review-std (DeepSeek); `both`, one review-both (DeepSeek) covering both axes. Every reviewer gets
+   review-std (free DeepSeek); `both`, one review-both (paid DeepSeek high) covering both axes. Every reviewer gets
    the spec, and a reviewer of the implementer's family is swapped for its `-alt`.
    Each finding carries a reproduction and a `basis`; the harness reruns them on the branch, with the
    existing tests next to the change (failing test names compared with the base). Proven ones join a
@@ -255,15 +255,19 @@ second attempt; lower it for a trivial edit.
 wording against the repo's style rules yourself.
 
 **Council** (every plan, ADR, phase plan and contested call, before you present it):
-`council <repo> --prompt q.md [--file plan.md ...]`. Sol 6.1 high answers in one pass; Gemini 3.8 Flash
-and DeepSeek Flash high read the repo read-only to check the plan's claims. One digest comes back,
-`## Agreed`, `## Unique`, `## Contradicting`, each item tagged with its advisor. Resolve every
+`council <repo> --prompt q.md [--file plan.md ...]`. Sol 6.1 high, Gemini 3.8 Flash
+and free DeepSeek Flash each read the repo read-only to check the plan's claims, in parallel, blind to
+each other. The `merge` role (paid DeepSeek high, one pass, told to favour no advisor; `--merge ROLE|MODEL`
+or `COUNCIL_MERGE` picks another) writes one digest, `## Agreed`, `## Unique`, `## Contradicting`, each
+item tagged with its advisor. Resolve every
 medium+ item (change the plan, or say in the plan why not) before the user sees it. RakunLoots P10
 (2026-10-26): DeepSeek and Gemini improved an Opus plan, and Codex still found a gap it had. One quick
 question: `ask <repo> --prompt q.md` (Sol alone).
 
 **Budget and pools**: Opus+Sonnet share a pool, all Gemini models share one, DeepSeek and Codex (Sol) have
-their own. Gemini does the bulk; DeepSeek escalations, quick edits, standards reviews and review-both;
+their own. Gemini does the bulk; paid DeepSeek escalations, review-both and the council merge; free
+DeepSeek (`opencode/deepseek-v4.1-flash-free`: no key, may keep prompts for training, falls back to
+`FREE_FALLBACK` at its limit) quick edits, standards reviews and a council seat;
 Opus spec reviews and prose; Opus is never a coder by default. Unused: Sonnet (spends Opus's pool),
 Composer (misreported tool results, research/findings.md §6). Every worker has a `scout` subagent
 (Gemini 3.8 Flash) for searching. Ponytail is loaded by every worker before it writes code.
