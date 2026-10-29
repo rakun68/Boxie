@@ -277,3 +277,84 @@ the run's verdict was `error / fix_environment`, which names neither the cause n
 **Workaround.** Fewer or shorter `--file`s; keep task plus pack under about 120 KB.
 Better: write the prompt to a file inside the container and pass it by path (or stdin), and check the
 size before launch with a clear error.
+
+## Found driving Lykos P7, 2026-10-25 to 2026-10-26
+
+Seen in the orchestrating session; fixed on branch `fix/p7-gaps` (2026-10-29). Unit tests cover each
+fix (test/gaps.test.mjs, test/loop.test.mjs, test/p7-shell.test.mjs); none has run live yet.
+
+### 20. A run waiting for a project slot exited silently
+
+**Seen.** T220 and T225 reviews ended in 8 s as "no readable findings" under `PROJECT_SLOTS=1` while
+the loop's base suite held the slot.
+
+**Fixed** before this section, in `9ab8ce7` (2026-10-27): `slot_acquire`'s holder list no longer
+fails under `pipefail`.
+
+### 21. `loop resume` kept the settings the loop started with
+
+**Seen.** `LOOP_BASE_SUITE=0` in `projects/lykos.env` never reached the resumed T220 loop, which ran
+its base suite again and held the only slot.
+
+**Fixed.** A resume reads how steps run (`LOOP_BASE_SUITE`, `BASE_SUITE_CMD`, `LOOP_PARK`,
+`LOOP_LIVE_ASK`, `FAIL_REGEX`, `NEIGHBOUR_SOURCES`, `LOOP_NEIGHBOURS`) from the config as it is now. The
+loop's caps, reviewers and fresh roles stay as started.
+
+### 22. `--add` text was dropped when the first review approved
+
+**Seen.** T225 and L4: the loop approved after one clean review, and the orchestrator's added notes
+never reached a fixer.
+
+**Fixed.** Orchestrator text no fixer has been sent gets one fix round before the loop can approve.
+Text unsent at a stop is kept in the state and sent by the resume.
+
+### 23. A review with its findings in prose stopped the loop
+
+**Seen.** T223's DeepSeek review listed six real findings in prose and no `boxie-findings` block,
+even after being asked for the block alone.
+
+**Fixed.** After that request fails, `ROLE_transcribe` (a free model) copies the findings out of the
+reviewer's message into the block, adding and judging nothing; the loop reruns each reproduction as
+usual. `ROLE_transcribe=""` turns it off.
+
+### 24. `clean` removed other sessions' running containers
+
+**Seen.** `delegate.sh clean` during P7 also removed RakunLoots's container.
+
+**Fixed.** `clean [<repo>]` removes stopped containers and running ones whose run is over or whose
+launcher is gone. A live run's container and a parked one stay; `--all` removes every one.
+
+### 25. Container memory caps were never checked against the engine's memory
+
+**Seen.** The Podman VM (15.9 GB) died 3 times with Lykos and RakunLoots containers capped at 8g
+each.
+
+**Fixed.** A launch waits while the caps of running Boxie containers, plus taken slots not up
+yet, plus its own, exceed the engine's memory x `MEMORY_OVERCOMMIT` (1.5; 0: off). One container is
+never refused. `doctor` warns when memory, not slots, limits how many run at once.
+
+### 26. No way to stop one run
+
+**Seen.** A leftover base suite held Lykos's only slot for 15 minutes; killing its process by hand
+was refused.
+
+**Fixed.** `delegate.sh stop <repo> <run|loop>...` removes the run's container (and `<run>-*`, so a
+loop's name stops its rounds and base suite). Its launch ends and frees the slot.
+
+### 27. An approved loop said nothing about what it had not run
+
+**Seen.** Three failures passed the loop and were found only on the host: a tool-risk test (T224),
+missing catalog entries (`02f1ace`) and the L4 crash (`eecfebb`). The loop runs at most
+`LOOP_NEIGHBOURS` test files next to the change. T226's Windows-only path bug passed in the Linux
+container.
+
+**Fixed.** An approve lists `unchecked:` lines: the whole suite did not run on the branch, with the
+`delegate.sh check` command that runs it, and on a Windows host that the host's own behaviour is
+untested. The orchestrator decides from the change's risk (user, 2026-10-29); nothing runs by itself.
+
+### 28. A container flake counted as a regression
+
+**Seen.** T224's loop ended on `decide` with an ast-grep "regression" that passed on the host.
+
+**Fixed.** A regression in the tests next to the change is run once more; only tests that fail
+both times count. A flake is logged (`flaky` in progress.jsonl).

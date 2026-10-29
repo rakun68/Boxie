@@ -152,7 +152,9 @@ Usage: delegate.sh <command> ...
                                  the per-slot cache volumes (reseeded on next use). Dry run unless --yes
   bench    list|run ...          Frozen benchmark suites (bench/README.md); BOXIE_REPOS points real-
                                  history tasks at another checkout
-  clean                        Remove leftover boxie containers (and parked ones)
+  clean    [<repo>] [--all]     Remove leftover containers: stopped, or whose run is over. A live run's and a
+                                 parked one are kept (--all: every one, parked included)
+  stop     <repo> <run|loop>...  Stop runs now (and <run>-*: a loop's rounds and base suite): container removed
   unpark   <repo> <run>...|--all Remove parked containers of these runs (and <run>-*); the loop does it itself
   spec-check <repo> <task.md|dir> [--role R] [--name N] [--base REF]
                                  A dir: every .md in it checked together, for gaps between tickets too.
@@ -277,11 +279,67 @@ cmd_models() {
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const m of JSON.parse(s).data||[])console.log(m.id)})'
 }
 
+# Leftover containers of this namespace: stopped ones, and running ones whose run is over or whose
+# launcher is gone. A live run's container and a parked one are kept, so another session's work survives
+# (Lykos P7, 2026-10-25: clean removed a RakunLoots container). <repo>: that project only. --all: every
+# container and parked marker, as before.
 cmd_clean() {
-  rm -f "$BOX"/runs/*/*/parked
-  local ids; ids="$(dk ps -aq --filter "label=$LABEL" --filter "label=$NS_LABEL")"
+  local all=0 a scoped=0 filt=(--filter "label=$LABEL" --filter "label=$NS_LABEL")
+  for a in "$@"; do
+    case "$a" in
+      --all) all=1 ;;
+      -*) die "clean: unknown option $a" ;;
+      *) load_project "$a"; scoped=1; filt+=(--filter "label=boxie.project=$PROJECT") ;;
+    esac
+  done
+  local ids; ids="$(dk ps -aq "${filt[@]}")"
+  if [ "$all" = 1 ]; then
+    if [ "$scoped" = 1 ]; then rm -f "$BOX/runs/$PROJECT"/*/parked; else rm -f "$BOX"/runs/*/*/parked; fi
+    [ -z "$ids" ] && { echo "nothing to clean"; return; }
+    dk rm -f $ids; return
+  fi
   [ -z "$ids" ] && { echo "nothing to clean"; return; }
-  dk rm -f $ids
+  local id c pr running dir rm=() kept=()
+  while IFS='|' read -r id c pr running; do
+    c="${c#/}"; dir="$(clean_run_dir "$c" "$pr")"
+    if [ "$running" = true ] && [ -n "$dir" ] && { [ -f "$dir/parked" ] || ! run_over "$dir"; }; then kept+=("$c"); else rm+=("$id"); fi
+  done < <(dk inspect -f '{{.Id}}|{{.Name}}|{{index .Config.Labels "boxie.project"}}|{{.State.Running}}' $ids)
+  [ "${#rm[@]}" = 0 ] || dk rm -f "${rm[@]}"
+  [ "${#kept[@]}" = 0 ] || echo "boxie: kept ${#kept[@]} running (a live run or parked): ${kept[*]}. stop <repo> <run> or unpark removes one, clean --all every one"
+  [ "${#rm[@]}" != 0 ] || [ "${#kept[@]}" != 0 ] || echo "nothing to clean"
+}
+# The run directory of container <name> of project <pr>, or nothing. cname_of may have replaced
+# characters of the run name, so a miss looks through the project's runs.
+clean_run_dir() {
+  local c="$1" pr="$2" d n
+  [ -n "$pr" ] || return 0
+  d="$BOX/runs/$pr/${c#"$NS-$pr-"}"
+  [ -d "$d" ] && { echo "$d"; return 0; }
+  for d in "$BOX/runs/$pr"/*/; do
+    d="${d%/}"; n="${d##*/}"
+    [ "$NS-$pr-${n//[^a-zA-Z0-9_.-]/-}" = "$c" ] && { echo "$d"; return 0; }
+  done
+  return 0
+}
+
+# Stops runs: each one's container is removed, so its launch ends (slot freed, <run>/ended written) and a
+# loop driving it stops at that step. <run> also matches <run>-*, so a loop's name stops its rounds and
+# its base suite. Lykos P7 (2026-10-25): a leftover base suite held the project's only slot for 15 min,
+# and killing its process by hand was refused.
+cmd_stop() {
+  [ $# -ge 2 ] || die "usage: stop <repo> <run|loop>..."
+  load_project "$1"; shift
+  local d n p c hit=0
+  for d in "$BOX/runs/$PROJECT"/*/; do
+    d="${d%/}"; n="${d##*/}"
+    for p in "$@"; do
+      [ "$n" = "$p" ] || [[ "$n" == "$p"-* ]] || continue
+      c="$(cname_of "$n")"
+      if dk inspect "$c" >/dev/null 2>&1; then dk rm -f "$c" >/dev/null 2>&1 || true; rm -f "$d/parked"; echo "boxie: stopped $n"; hit=1; fi
+      break
+    done
+  done
+  [ "$hit" = 1 ] || echo "boxie: no container of $PROJECT matches $*"
 }
 
 # Removes parked containers (see launch): those of the named runs and of runs named <name>-*, or every
@@ -454,7 +512,8 @@ launch() {
   # so no other container uses those volumes at the same time.
   local want_slot=""
   [ -n "${CONTINUE_SESSION:-}" ] && [ -f "$CONTINUE_FROM/parked" ] && read -r _ _ want_slot <"$CONTINUE_FROM/parked"
-  slot_acquire "$name" "$want_slot"
+  # A parked container's next round runs in it: its memory is already counted.
+  if [ -n "$want_slot" ]; then slot_acquire "$name" "$want_slot" 0; else slot_acquire "$name" ""; fi
   # Parking (BOXIE_PARK=1, set by the review loop): a finished worker's container stays up, marked
   # by <run>/parked, so `continue` on its session runs the next round in it: no new container, clone,
   # setup or session restore (40-90 s a round on RakunMiniItems). A parked container holds no slot;
@@ -489,6 +548,8 @@ launch() {
   export COMPACT_AT="${COMPACT_AT:-}" COMPACT_KEEP="${COMPACT_KEEP:-}" SELF_CHECK="${SELF_CHECK:-}"
   # The paid model a free opencode/* model hands over to at its limit (image/run-task.sh).
   export FREE_FALLBACK="${FREE_FALLBACK:-}"
+  # The model that copies a reviewer's prose findings into the block when the reviewer will not (run-task.sh 3f).
+  local tr="${ROLE_transcribe:-}"; export TRANSCRIBE_MODEL="${tr%% *}"
   local host_ip; host_ip="$(host_address)"
   local net_args=(); [ -n "${BOXIE_NETWORK:-}" ] && net_args=(--network "$BOXIE_NETWORK")
   export BRANCH="$branch" BASE_SHA="$base_sha" START_SHA="$start_sha" SKIP_AGENT="$skip_agent"
@@ -497,7 +558,7 @@ launch() {
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
     AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S
-    FREE_FALLBACK)
+    FREE_FALLBACK TRANSCRIBE_MODEL)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then
@@ -598,6 +659,7 @@ SLOT=""
 # hour for their old slot while others were free.
 slot_acquire() {
   local d="$BOX/runs/.slots" i pid pr n="${BOXIE_SLOTS:-4}" waited=0 want="${2:-}" cap="${PROJECT_SLOTS:-0}" t0 mine=0 holders
+  local memw=0 memsaid=0 mem="${3-$(mem_bytes "${MEMORY:-8g}")}"
   mkdir -p "$d"; t0=$(date +%s); SLOT_PREFERRED=0
   [[ "$want" =~ ^[0-9]+$ ]] && [ "$want" -le "$n" ] || want=""
   [[ "$cap" =~ ^[0-9]+$ ]] || cap=0
@@ -613,7 +675,7 @@ slot_acquire() {
       if [ "$cap" -gt 0 ]; then
         for i in $(seq 1 "$n"); do read -r _ _ pr 2>/dev/null <"$d/$i/owner" && [ "$pr" = "${PROJECT:-}" ] && mine=$((mine + 1)); done
       fi
-      if [ "$cap" = 0 ] || [ "$mine" -lt "$cap" ]; then
+      if { [ "$cap" = 0 ] || [ "$mine" -lt "$cap" ]; } && { mem_room "$d" "$mem" || { memw=1; false; }; }; then
         local order; order="$(seq 1 "$n")"
         if [ -n "$want" ]; then
           order="$want"
@@ -621,14 +683,17 @@ slot_acquire() {
         fi
         for i in $order; do
           if mkdir "$d/$i" 2>/dev/null; then
-            echo "$$ $1 ${PROJECT:-}" >"$d/$i/owner"; SLOT="$d/$i"; [ "$i" = "$want" ] && SLOT_PREFERRED=1
+            echo "$ $1 ${PROJECT:-}" >"$d/$i/owner"; echo "$mem" >"$d/$i/mem"; SLOT="$d/$i"; [ "$i" = "$want" ] && SLOT_PREFERRED=1
             slot_unlock "$d"; return 0
           fi
         done
       fi
       slot_unlock "$d"
     fi
-    if [ "$waited" = 0 ]; then
+    if [ "$memw" = 1 ]; then
+      [ "$memsaid" = 1 ] || echo "boxie: $1 waits for memory: running caps $((MEM_USED >> 20)) MiB + $((mem >> 20)) MiB > $((MEM_LIMIT >> 20)) MiB (engine memory x MEMORY_OVERCOMMIT=${MEMORY_OVERCOMMIT:-1.5})" >&2
+      memw=0; memsaid=1
+    elif [ "$waited" = 0 ]; then
       # || true: a free slot has no owner file, and under pipefail its failed read made this line, and so
       # the launch, exit without a word (a council member and a spec check under PROJECT_SLOTS=1, 2026-10-27).
       holders="$(for i in $(seq 1 "$n"); do read -r _ nm pr 2>/dev/null <"$d/$i/owner" && echo "$i:$nm${pr:+ ($pr)}" || true; done | paste -sd, -)"
@@ -640,6 +705,42 @@ slot_acquire() {
     fi
     waited=1; sleep 3
   done
+}
+# Memory: the caps (--memory) of every running Boxie container, all namespaces (they share the
+# engine's VM), plus taken slots whose container is not up yet, against the engine's memory x
+# MEMORY_OVERCOMMIT (default 1.5; 0: no check). Lykos P7 (2026-10-25): 8g caps past a 15.9 GB Podman VM,
+# and the VM died 3 times. mem_room <slots dir> <bytes>: 0 when the new container fits, or when nothing
+# runs (one container is never refused), or when the engine's memory is unknown.
+mem_bytes() {
+  local v="${1,,}"
+  [[ "$v" =~ ^([0-9]+)([kmg]?)b?$ ]] || { echo 0; return; }
+  case "${BASH_REMATCH[2]}" in g) echo $(( BASH_REMATCH[1] << 30 )) ;; m) echo $(( BASH_REMATCH[1] << 20 )) ;; k) echo $(( BASH_REMATCH[1] << 10 )) ;; *) echo "${BASH_REMATCH[1]}" ;; esac
+}
+MEM_TOTAL="" MEM_USED=0 MEM_LIMIT=0
+mem_room() {
+  local d="$1" want="$2" ids up=" " c m i nm pr
+  [ "${MEMORY_OVERCOMMIT:-1.5}" = 0 ] && return 0
+  if [ -z "$MEM_TOTAL" ]; then
+    if [ "$ENGINE" = podman ]; then MEM_TOTAL="$(dk info --format '{{.Host.MemTotal}}' 2>/dev/null || true)"
+    else MEM_TOTAL="$(dk info --format '{{.MemTotal}}' 2>/dev/null || true)"; fi
+    [[ "$MEM_TOTAL" =~ ^[0-9]+$ ]] || MEM_TOTAL=0
+  fi
+  [ "$MEM_TOTAL" -gt 0 ] || return 0
+  MEM_LIMIT="$(awk -v t="$MEM_TOTAL" -v r="${MEMORY_OVERCOMMIT:-1.5}" 'BEGIN { printf "%.0f", t * r }')"
+  MEM_USED=0
+  ids="$(dk ps -q --filter "label=$LABEL" 2>/dev/null || true)"
+  if [ -n "$ids" ]; then
+    while read -r c m; do
+      up+="${c#/} "; [[ "$m" =~ ^[0-9]+$ ]] && MEM_USED=$(( MEM_USED + m ))
+    done < <(dk inspect -f '{{.Name}} {{.HostConfig.Memory}}' $ids 2>/dev/null || true)
+  fi
+  for i in "$d"/*/owner; do
+    read -r _ nm pr 2>/dev/null <"$i" || continue
+    [[ "$up" == *" $NS-$pr-${nm//[^a-zA-Z0-9_.-]/-} "* ]] && continue
+    read -r m 2>/dev/null <"${i%/owner}/mem" || m=0
+    [[ "$m" =~ ^[0-9]+$ ]] && MEM_USED=$(( MEM_USED + m ))
+  done
+  [ "$MEM_USED" = 0 ] || [ $(( MEM_USED + want )) -le "$MEM_LIMIT" ]
 }
 slot_release() { [ -n "$SLOT" ] && rm -rf "$SLOT"; SLOT=""; return 0; }
 # A short mutex under runs/.slots; a lock older than 30 s is a dead holder's and is broken.
@@ -1575,13 +1676,14 @@ case "${1:-}" in
     if [ -n "${1:-}" ]; then load_project "$1"; else OMNIROUTE_BASE_URL="${OMNIROUTE_BASE_URL:-http://host.docker.internal:20128/v1}"; fi
     AB_BASH="$BASH_VERSION" AB_ENGINE="$ENGINE" AB_IMAGE="$IMAGE" AB_BASE_IMAGE="$BASE_IMAGE" AB_BOX="$(winpath "$BOX")" \
       AB_PROJECT_ENV="${PROJECT_ENV:-}" AB_REPO="${REPO:-}" AB_HOST_IP="$(host_address)" AB_NETWORK="${BOXIE_NETWORK:-}" \
-      AB_SLOTS="${BOXIE_SLOTS:-4}" AB_MEMORY="${MEMORY:-8g}" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
+      AB_SLOTS="${BOXIE_SLOTS:-4}" AB_MEMORY="${MEMORY:-8g}" AB_OVERCOMMIT="${MEMORY_OVERCOMMIT:-1.5}" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
       OMNIROUTE_HOST_URL="${OMNIROUTE_HOST_URL:-http://localhost:20128/v1}" OMNIROUTE_BASE_URL="$OMNIROUTE_BASE_URL" \
       node "$(winpath "$BOX/lib/doctor.mjs")" ;;
   gc) shift; cmd_gc "$@" ;;
   bench) shift; BOXIE_REPOS="${BOXIE_REPOS:-}" node "$(winpath "$BOX/lib/bench.mjs")" "$@" ;;
   dash) shift; node "$(winpath "$BOX/lib/stats.mjs")" tui "$@" ;;
-  clean) cmd_clean ;;
+  clean) shift; cmd_clean "$@" ;;
+  stop) shift; cmd_stop "$@" ;;
   unpark) shift; cmd_unpark "$@" ;;
   spec-check) shift; cmd_spec_check "$@" ;;
   ""|help|-h|--help) usage ;;
