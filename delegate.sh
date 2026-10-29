@@ -541,7 +541,8 @@ launch() {
 
   if [ -f "$run_dir/result.bundle" ]; then
     git -C "$REPO" fetch -q "$(winpath "$run_dir/result.bundle")" "refs/heads/$branch:refs/heads/$branch" \
-      && echo "agent-box: fetched into $REPO as branch $branch" >&2
+      && echo "agent-box: fetched into $REPO as branch $branch" >&2 \
+      && node "$(winpath "$BOX/lib/own.mjs")" "$(winpath "$REPO")" "$base_sha" "$branch" "$(winpath "$run_dir")"
   fi
   slot_release
   # Checks, verdict, next action and the ledger entry (lib/ledger.mjs, docs/ledger.md).

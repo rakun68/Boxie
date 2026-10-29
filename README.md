@@ -23,7 +23,7 @@ agents, effort, permissions; OmniRoute behaviour).
 ## Install
 
 ```bash
-git clone https://github.com/nudetiger/agent-box.git
+git clone https://github.com/rakun68/agent-box.git
 cd agent-box
 npm ci                          # host-side helpers (one dependency: yaml)
 podman machine start            # Podman on Windows or macOS; skip on Linux or with Docker
@@ -165,6 +165,9 @@ step when either changes.
   project's OmniRoute key. No host `.git`, home directory, SSH keys, `gh` token or uncommitted work.
 - **Out:** a `git bundle` of the worker's commits, fetched as branch `agent/<name>`, plus logs. No file
   written by the container is ever executed on the host.
+- **Your commits:** on the host, the worker's commits are rewritten with your repo's `user.name` and
+  `user.email`, and signed when `commit.gpgSign` is set (`lib/own.mjs`). The signing key stays on the
+  host. The worker's model is kept in an `Agent-Box-Worker:` trailer.
 - **Container:** non-root `node` user, `--cap-drop ALL`, `no-new-privileges`, `--init`, pid and memory
   limits. Removed after every run.
 - **Not covered:** network egress is open (needed for `npm ci`). A hostile model can send out the repo
