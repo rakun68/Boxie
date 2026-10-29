@@ -112,11 +112,14 @@ Usage: delegate.sh <command> ...
                                  One-pass advisor (debate/critique), no tools; prompt from FILE or stdin.
                                  advise is Sol 6.1 (cx/; the Responses API when chat completions refuse)
   council  <repo> --prompt FILE [--file CTX ...] [--members a,b,c] [--effort LEVEL] [--name N] [--merge R]
+                        [--with-box]
                                  COUNCIL's advisors in parallel (Sol, Gemini and DeepSeek: read-only
                                  runs that check the repo), merged into one digest: agreed,
                                  unique, contradicting, each item tagged. runs/<p>/_council/<name>/
                                  --merge: the merger, a role (merge, advise@high) or an OmniRoute
-                                 model id; default COUNCIL_MERGE
+                                 model id; default COUNCIL_MERGE. A failed merge leaves the answers
+                                 unmerged in digest.md. --with-box: Boxie's own source at .boxie-ref/
+                                 in each member's clone, to check claims about Boxie
   phase-review <repo> --base REF [--head REF] [--name N] [--spec FILE ...] [--max-rounds N] [--roles a,b,c]
                                  The whole phase diff, split into areas under REVIEW_DIFF_MAX, one family
                                  per round (PHASE_REVIEW_ROLES, rotating) until two rounds in a row from
@@ -166,7 +169,7 @@ Engine: podman (default) or docker, from BOXIE_ENGINE or boxie.conf. Build once 
 Parallel: at most BOXIE_SLOTS containers at once (default 4); each slot has its own CACHES volumes.
 PROJECT_SLOTS=N in a project's .env caps that project's containers (checks and base suites included).
 An npm repo set up by the default `npm ci` keeps node_modules per slot (NODE_MODULES_CACHE=0: off).
-A run's launch runs `gc --yes` at most once a day (AUTO_GC=0: off). Host scratch lives in runs/.tmp.
+A run's launch runs `gc --yes` on runs/, branches and scratch at most once a day (AUTO_GC=0: off). Host scratch lives in runs/.tmp.
 
 <repo> is the repo's path; a bare name works when projects/<name>.env sets REPO_PATH.
 Per-project settings: projects/<repo-folder-name-lowercase>.env (see projects/example.env)
@@ -400,22 +403,26 @@ cmd_show() {
 # Shared by run and baseline.
 # `gc --yes` at most once a day, in the background, from a run's launch (runs/ had grown to 1.4 GB,
 # 2026-10-23; gc was manual). Its report is runs/.gc.log. AUTO_GC=0 turns it off.
+# Host side only: the engine part (image prune, container removal) ran while a council started its
+# members, and twice the Podman VM dropped with it (2026-10-27, Lykos P18 2026-10-28). `gc --yes` by hand
+# still does it.
 auto_gc() {
   [ "${AUTO_GC:-1}" != 0 ] || return 0
   local stamp="$BOX/runs/.gc-last"
   [ -n "$(find "$stamp" -mmin -1440 2>/dev/null)" ] && return 0
   mkdir -p "$BOX/runs"; touch "$stamp"
-  echo "boxie: daily cleanup in the background (runs/, branches, scratch, images, stopped containers; AUTO_GC=0 turns it off): runs/.gc.log" >&2
-  (cmd_gc --yes >"$BOX/runs/.gc.log" 2>&1 &)
+  echo "boxie: daily cleanup in the background (runs/, branches, scratch; AUTO_GC=0 turns it off): runs/.gc.log" >&2
+  (cmd_gc --yes --host-only >"$BOX/runs/.gc.log" 2>&1 &)
 }
 
 # runs/, branches, worktrees and scratch (lib/gc.mjs), then the engine: untagged images left by rebuilds,
 # this namespace's stopped containers (parked ones keep running) and, with --volumes, its per-slot cache
 # volumes (9.6 GB of the 16.6 GB of volumes, 2026-10-24; a slot's volume is seeded again when next used).
 cmd_gc() {
-  local a yes=0 vols=0 rest=()
-  for a in "$@"; do case "$a" in --yes) yes=1; rest+=("$a") ;; --volumes) vols=1 ;; *) rest+=("$a") ;; esac; done
+  local a yes=0 vols=0 host=0 rest=()
+  for a in "$@"; do case "$a" in --yes) yes=1; rest+=("$a") ;; --volumes) vols=1 ;; --host-only) host=1 ;; *) rest+=("$a") ;; esac; done
   node "$(winpath "$BOX/lib/gc.mjs")" "$(winpath "$BOX/runs")" "${rest[@]}"
+  [ "$host" = 0 ] || return 0
   local ids slotvols=""
   # A slot's copy is <base><slot>-cache next to <base>-cache (m21 beside m2), or a node_modules one (-nm<slot>-).
   [ "$vols" = 1 ] && slotvols="$(all="$(dk volume ls -q 2>/dev/null)"; for v in $(grep -E "^$NS-.+[0-9]-cache\$" <<<"$all"); do
@@ -575,6 +582,7 @@ launch() {
   local stage="$run_dir/.in"
   mkdir -p "$stage" && mv "$run_dir/in.bundle" "$stage/repo.bundle"
   [ -n "${HIDDEN_DIR:-}" ] && mkdir -p "$stage/hidden" && cp -r "$HIDDEN_DIR/." "$stage/hidden/"
+  [ -n "${REF_DIR:-}" ] && mkdir -p "$stage/ref" && cp -r "$REF_DIR/." "$stage/ref/"
   if [ -n "${CONTINUE_SESSION:-}" ]; then
     cp "$run_dir/message.md" "$stage/task.md"
     [ "$reuse" = 1 ] || cp "$CONTINUE_FROM/opencode-data.tgz" "$stage/opencode-data.tgz"
@@ -809,6 +817,7 @@ cmd_run() {
       --no-autofix) AUTOFIX=0; shift ;;
       --no-red) NO_RED=1; shift ;;
       --hidden) HIDDEN_DIR="$2"; shift 2 ;;          # benchmark check: files copied in before the tests
+      --ref) REF_DIR="$2"; shift 2 ;;                # read-only runs: reference files at .boxie-ref/ in the clone
       --bench) LEDGER_BENCH="$2"; shift 2 ;;          # benchmark attempt: suite/task in the ledger
       --mode) LEDGER_MODE="$2"; shift 2 ;;
       --preamble) PREAMBLE="$2"; shift 2 ;;
@@ -1511,9 +1520,18 @@ cmd_batch() {
 # gap in it; one advisor misses what three catch. Members in COUNCIL_ASK_ONLY answer single-pass (no
 # tools; empty by default: cx/gpt-6.1-sol calls tools through OpenCode, 2026-10-28); the rest are read-only
 # runs that read the repo to check the plan's claims. COUNCIL_MERGE writes the digest.
+# A tool member's answer from run <run> into <base>.md, or <base>.short.md when under COUNCIL_MIN_ANSWER
+# characters (lib/council.mjs: the report, not a closing offer after it).
+member_answer() {
+  local rc=0
+  rm -f "$2.md" "$2.short.md"
+  node "$(winpath "$BOX/lib/council.mjs")" answer "$(winpath "$BOX/runs/$PROJECT/$1")" "$(winpath "$2.md")" "${COUNCIL_MIN_ANSWER:-1000}" || rc=$?
+  [ "$rc" != 3 ] || mv "$2.md" "$2.short.md"
+  return 0
+}
 cmd_council() {
   local repo="$1"; shift
-  local prompt="" members="" name="" eff="" merge="" files=() f
+  local prompt="" members="" name="" eff="" merge="" files=() f withbox=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --prompt) prompt="$2"; shift 2 ;;
@@ -1522,6 +1540,7 @@ cmd_council() {
       --name) name="$2"; shift 2 ;;
       --effort) eff="$2"; shift 2 ;;
       --merge) merge="$2"; shift 2 ;;
+      --with-box) withbox=1; shift ;;
       *) die "unknown option $1" ;;
     esac
   done
@@ -1531,6 +1550,15 @@ cmd_council() {
   [ -n "$name" ] || name="council-$(date +%Y%m%d-%H%M%S)"
   local dir="$BOX/runs/$PROJECT/_council/$name"; mkdir -p "$dir"
   cp "$prompt" "$dir/prompt.md"
+  # --with-box: Boxie's own tracked source goes into each tool member's clone at .boxie-ref/. Lykos P18
+  # (2026-10-28): members reported lib/*.mjs and docs/known-gaps.md absent, so claims about Boxie went unchecked.
+  local ref=()
+  if [ "$withbox" = 1 ]; then
+    rm -rf "$dir/boxie-ref"; mkdir -p "$dir/boxie-ref"
+    (cd "$BOX" && git ls-files -z lib docs image claude-skill delegate.sh boxie.conf | tar --null -T - -cf -) | tar -xf - -C "$dir/boxie-ref" \
+      || die "could not copy Boxie's source for --with-box"
+    ref=(--ref "$dir/boxie-ref")
+  fi
   herdr_ok && herdr_ws >/dev/null
   # The tool members' task: the question and the attached files inline (a plan file is often uncommitted,
   # so the run's clone would not have it).
@@ -1544,6 +1572,8 @@ cmd_council() {
     echo "Answer: your recommendation first; then every gap, inconsistency or wrong premise, each with a"
     echo "severity (critical, high, medium, low) and \`path:line\` evidence; then the strongest argument"
     echo "against your recommendation; then what you did not verify."
+    echo "Your last message is your whole answer: write the full report there, not a question or an offer."
+    [ "$withbox" = 0 ] || { echo; echo "Boxie's own source (lib/, docs/, image/, claude-skill/, delegate.sh, boxie.conf) is at \`.boxie-ref/\`"; echo "in your clone, to check claims about Boxie. It is reference only: not part of this repository."; }
     echo; echo "## The question"; echo; cat "$prompt"
     for f in "${files[@]}"; do echo; echo "## Attached: $f"; echo; echo '````'; head -c 60000 "$f"; echo; echo '````'; done
   } >"$dir/task.md"
@@ -1555,19 +1585,28 @@ cmd_council() {
       "${SELF[@]}" ask "$repo" --role "$m" ${eff:+--effort "$eff"} --prompt "$dir/task.md" >"$dir/$b.md" 2>"$dir/$b.log" &
     else
       ( BOXIE_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red \
-          --preamble explore --mode council --name "$name-$b" --steps "${COUNCIL_STEPS:-60}" >"$dir/$b.log" 2>&1
-        cp "$BOX/runs/$PROJECT/$name-$b/final.md" "$dir/$b.md" 2>/dev/null || true ) &
+          --preamble explore --mode council --name "$name-$b" --steps "${COUNCIL_STEPS:-60}" "${ref[@]}" >"$dir/$b.log" 2>&1
+        member_answer "$name-$b" "$dir/$b" ) &
     fi
     names+=("$b"); sleep 2
   done
   wait
-  # A tool member that died without a word gets one more try, alone.
+  # A tool member that died without a word, or answered under COUNCIL_MIN_ANSWER characters, gets one more
+  # try, alone. A short answer stands when the retry gives nothing longer.
   for m in $members; do
     b="${m%%@*}"
     [[ " ${COUNCIL_ASK_ONLY-advise} " == *" $b "* ]] || [ -s "$dir/$b.md" ] || {
-      echo "council: $b gave no answer; trying once more" >&2
-      BOXIE_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red         --preamble explore --mode council --name "$name-$b-2" --steps "${COUNCIL_STEPS:-60}" >>"$dir/$b.log" 2>&1 || true
-      cp "$BOX/runs/$PROJECT/$name-$b-2/final.md" "$dir/$b.md" 2>/dev/null || true
+      echo "council: $b gave $([ -s "$dir/$b.short.md" ] && echo "only a short answer" || echo "no answer"); trying once more" >&2
+      cp "$dir/$b.short.md" "$dir/$b.first.md" 2>/dev/null || true
+      BOXIE_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red \
+        --preamble explore --mode council --name "$name-$b-2" --steps "${COUNCIL_STEPS:-60}" "${ref[@]}" >>"$dir/$b.log" 2>&1 || true
+      member_answer "$name-$b-2" "$dir/$b"
+      if [ ! -s "$dir/$b.md" ]; then
+        # Neither try reached the floor: the longer short answer stands.
+        f="$dir/$b.short.md"; [ "$(wc -c <"$dir/$b.first.md" 2>/dev/null || echo 0)" -gt "$(wc -c <"$f" 2>/dev/null || echo 0)" ] && f="$dir/$b.first.md"
+        [ ! -s "$f" ] || { echo "council: $b's answer is short; kept as it is" >&2; cp "$f" "$dir/$b.md"; }
+      fi
+      rm -f "$dir/$b.first.md"
     }
   done
   local answers=() n
@@ -1595,7 +1634,16 @@ cmd_council() {
   merge="${merge:-${COUNCIL_MERGE:-merge}}"
   local mergeby=(--role "$merge"); [[ "$merge" == */* ]] && mergeby=(--model "$merge")
   "${SELF[@]}" ask "$repo" "${mergeby[@]}" --prompt "$dir/merge-prompt.md" "${fa[@]}" >"$dir/digest.md" 2>"$dir/merge.log" \
-    || { echo "council: the merge failed ($dir/merge.log); the answers stand alone" >&2; cat "${answers[@]}"; return 1; }
+    || {
+      # The members' work stays in digest.md, under their names. Lykos P18 (2026-10-28): five merges failed
+      # and left an empty digest, the reports only in the member files.
+      { echo "# Council $name: the merge failed"; echo
+        echo "The merger ($merge) failed: $(tail -n 3 "$dir/merge.log" | tr -d '\r' | head -c 600)"
+        echo; echo "Below are the ${#answers[@]} members' answers as they gave them, not merged."
+        for f in "${answers[@]}"; do echo; echo "## ${f##*/}"; echo; cat "$f"; done; } >"$dir/digest.md"
+      echo "council: the merge failed ($dir/merge.log); digest.md holds the answers unmerged: $dir/digest.md" >&2
+      return 1
+    }
   echo; cat "$dir/digest.md"; echo; echo "council: digest $dir/digest.md"
 }
 
@@ -1623,6 +1671,25 @@ cmd_ask() {
     node "$(winpath "$BOX/lib/ask.mjs")" "$model" "$prompt" "$(winpath "$out")" "${files[@]}"
 }
 
+# A command given fewer arguments than its usage line names prints that usage and exits 2. Lykos P18
+# (2026-10-28): `council` alone died with "$1: unbound variable".
+usage_of() { usage | awk -v c="$1" 'index($0, "  " c " ") == 1 { p = 1; print; next } p && /^ {20,}/ { print; next } p { exit }'; }
+check_args() {
+  local c="$1" n="$2" want="${3:-}" t toks=() words=()
+  if [ -z "$want" ]; then
+    want=0; read -ra toks <<<"$(usage_of "$c" | head -n 1)"; read -ra words <<<"$c"
+    for t in "${toks[@]:${#words[@]}}"; do case "$t" in "<"*) want=$((want + 1)) ;; *) break ;; esac; done
+  fi
+  [ "$n" -ge "$want" ] && return 0
+  { usage_of "$c" | grep . || echo "usage: delegate.sh $c <repo> <file> ..."; } >&2
+  exit 2
+}
+case "${1:-}" in
+  ticket|feature|defect|hunt) check_args "$1" $(($# - 1)) 2 ;;
+  ticket-review|land) check_args "$1" $(($# - 1)) 1 ;;
+  loop) if [ "${2:-}" = resume ]; then check_args "loop resume" $(($# - 2)); else check_args loop $(($# - 1)); fi ;;
+  ?*) check_args "$1" $(($# - 1)) ;;
+esac
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
   ask) shift; cmd_ask "$@" ;;

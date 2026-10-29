@@ -150,7 +150,7 @@ checks and spec checks are short, so this overhead was a large share of them.
   to 7 s.
 - The model list, config and server run in the background during setup and the red check.
 - The inputs go into the container as one tar stream (each `podman cp` cost 0.7 s).
-- A run's launch runs `gc --yes` at most once a day (`AUTO_GC=0`: off).
+- A run's launch runs `gc --yes` on runs/, branches and scratch at most once a day (`AUTO_GC=0`: off).
 
 **Measured.** Old harness (commit 3c1f5d8) against the new one, same ticket, base and model. Each
 pair ran at the same time. Every run passed its tests. One run per side, so the agent and wall
@@ -175,7 +175,8 @@ are recorded as discarded in the ledger.
 
 ## Found in the Lykos P18 grill, 2026-10-28
 
-Found by reading the source, not in a live run.
+Found by reading the source and in the P18 councils. All fixed 2026-10-29; `test/p18-gaps.test.mjs`
+covers each.
 
 ### 10. A dead loop driver stays dead
 
@@ -184,8 +185,10 @@ Found by reading the source, not in a live run.
 closed terminal, a reboot, a killed shell), the loop waits until someone runs `loop resume`.
 `status` lists it, but only when someone asks.
 
-**Workaround.** Run `delegate.sh status <repo>` at the start of a session and `loop resume` what it
-lists.
+**Fixed** (2026-10-29). A running loop keeps its driver's pid in `state.json` until it stops. `status`
+lists a loop whose driver is gone as "its driver died", with the `loop resume` command, also a new loop
+that died before its first stop (it was not listed at all). `loop resume` refuses a loop whose driver
+still runs. Nothing resumes on its own: a resume spends model calls, so it stays the orchestrator's call.
 
 ### 11. The round cap's code default differs from its configured value
 
@@ -193,15 +196,15 @@ lists.
 sets 5, and the skill and README say 5. With the shipped config the cap is 5; the code default only
 applies if the line is removed.
 
-**Workaround.** None needed today. Better: one default, in one place.
+**Fixed** (2026-10-29). The code default is 5, as in `boxie.conf`.
 
 ### 12. `council` with no arguments crashes instead of printing usage
 
 **Seen.** `delegate.sh council` (2026-10-28) printed `./delegate.sh: line 1408: $1: unbound variable`.
 `cmd_council` reads `local repo="$1"` under `set -u` before any argument check.
 
-**Workaround.** Read `cmd_council` for its options. Better: every command with no arguments prints
-its usage, as R12 asks of `note`.
+**Fixed** (2026-10-29). A command given fewer arguments than its usage line names prints that usage
+and exits 2 (`check_args` in `delegate.sh`, counted from the usage text).
 
 ### 13. `ask` dies at 300 s while its own timeout is 15 minutes
 
@@ -213,16 +216,17 @@ task) failed twice, then the merge failed, each with `fetch failed` / `UND_ERR_H
 its own `headersTimeout` of 300 s. A model that thinks longer than 5 minutes before sending headers
 is cut off, whatever the abort signal says.
 
-**Workaround.** A shorter task, or a lower effort. Better: pass an undici `Agent` with
-`headersTimeout` and `bodyTimeout` matching the 15 minutes.
+**Fixed** (2026-10-29). `lib/ask.mjs` posts with `node:http`, which has no headers timeout; one
+15-minute timer covers the call. A dead gateway reads `ask failed (0): ...ECONNREFUSED`. Tested against a
+local fake gateway, not against a model thinking past 5 minutes.
 
 ### 14. A council whose merge fails leaves no digest, and the members' work looks lost
 
 **Seen.** Same run: both repo-reading members wrote full reports, the merge (Sol) failed, `digest.md`
 is empty and the command exits 1. Only one member's report reached the log tail.
 
-**Workaround.** Read `advise-*.md` in the council folder. Better: on a merge failure, write the
-members' reports into `digest.md` under their names and say the merge failed.
+**Fixed** (2026-10-29). A failed merge writes `digest.md` with the merger's error and every member's
+answer under its file name, unmerged. The command still exits 1.
 
 ### 15. The Podman VM dropped during a council launch
 
@@ -232,8 +236,9 @@ members' reports into `digest.md` under their names and say the merge failed.
 auto-gc ran at the same launch. The maturity journal records a member dying 3 s after the auto-gc on
 2026-10-27. The rerun with `AUTO_GC=0` did not crash. Two occurrences, cause unproven.
 
-**Workaround.** `podman machine start`, rerun with `AUTO_GC=0`. Better: never run the auto-gc's image
-prune while a launch is starting containers.
+**Fixed** (2026-10-29), cause still unproven. The daily auto-gc from a launch cleans only runs/,
+branches and scratch (`gc --yes --host-only`); the image prune and container removal run only from a
+`gc --yes` by hand.
 
 ### 16. The DeepSeek merger spends its whole output on reasoning and writes no digest
 
@@ -242,9 +247,9 @@ prune while a launch is starting containers.
 merge prompt carried three member reports (about 41 KB). `digest.md` is empty and the command exits 1
 (gap 14 again, with a new cause).
 
-**Workaround.** Read `advise*.md` and merge by hand. Better: give the merger a max output large enough
-for reasoning plus the digest, or a lower reasoning effort, and treat `finish_reason: length` with empty
-content as a failure that retries once with a larger limit.
+**Fixed** (2026-10-29). `ask` retries once with `reasoning_effort: low` and `max_tokens` 32768
+(`ASK_RETRY_MAX_TOKENS`) when the answer is empty with `finish_reason: length`, and a failure names
+the finish reason and usage. Not yet seen against the DeepSeek merger itself.
 
 ### 17. A member whose last message is a question counts as an answer
 
@@ -253,8 +258,10 @@ content as a failure that retries once with a larger limit.
 saved...", "Would you like to draft revisions..."). The council logged both as `answered`; the real
 report stayed in the run's transcript, not in the member file.
 
-**Workaround.** Check each member file's size; read the run's log for the report. Better: take the
-member's longest final assistant message, or reject an answer under a size floor and retry once.
+**Fixed** (2026-10-29). A member's answer is its last message when that is at least
+`COUNCIL_MIN_ANSWER` (1000) characters; otherwise its longest message, with the last one after it
+(`lib/council.mjs`). Still short: one retry, and the longer short answer stands. The member's task also
+says its last message is the whole report.
 
 ### 18. Repo-reading members cannot read Boxie itself
 
@@ -262,8 +269,9 @@ member's longest final assistant message, or reject an answer under a size floor
 `docs/known-gaps.md` absent; only the target repo is mounted. A plan that compares a project with
 Boxie cannot have its Boxie claims checked by the council.
 
-**Workaround.** Paste the Boxie excerpts the claims rest on into a `--file`. Better: a
-`--with-box` option that mounts Boxie's `lib/` and `docs/` read-only into members.
+**Fixed** (2026-10-29). `council --with-box` puts Boxie's tracked `lib/`, `docs/`, `image/`,
+`claude-skill/`, `delegate.sh` and `boxie.conf` at `.boxie-ref/` in each tool member's clone, out of git
+(`run --ref DIR`, read-only runs only). Needs the image rebuilt.
 
 ### 19. A prompt over 128 KB fails at launch with "Argument list too long"
 
@@ -274,9 +282,9 @@ Boxie cannot have its Boxie claims checked by the council.
 single argument at 128 KB (MAX_ARG_STRLEN). The council then reported "no council member answered", and
 the run's verdict was `error / fix_environment`, which names neither the cause nor the size.
 
-**Workaround.** Fewer or shorter `--file`s; keep task plus pack under about 120 KB.
-Better: write the prompt to a file inside the container and pass it by path (or stdin), and check the
-size before launch with a clear error.
+**Fixed** (2026-10-29). `run-task.sh` sends the prompt to `opencode run` on stdin, which OpenCode 1.19.4
+reads when stdin is not a terminal (checked in its binary), so no argument limit applies. Needs the image
+rebuilt; not yet run live with a prompt over 128 KB.
 
 ## Found driving Lykos P7, 2026-10-25 to 2026-10-26
 

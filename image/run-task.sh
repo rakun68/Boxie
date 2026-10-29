@@ -52,6 +52,11 @@ for w in gradlew mvnw; do [ -f "$w" ] && chmod +x "$w"; done
 git config user.name "boxie (${MODEL:-none})"
 git config user.email "boxie@localhost"
 git remote remove origin 2>/dev/null || true
+# Reference files for a read-only run (council --with-box: Boxie's own source), in the clone but out of git.
+if [ "${REVIEW:-0}" = 1 ] && [ -d /in/ref ]; then
+  rm -rf .boxie-ref && cp -a /in/ref .boxie-ref && echo /.boxie-ref/ >>.git/info/exclude
+  log "reference files at .boxie-ref/ ($(find .boxie-ref -type f | wc -l) files)"
+fi
 
 # 1b. Model list, OpenCode config and server, in the background while setup and the red check run:
 #     the list alone took 8 s (OmniRoute builds 1 MB, 2026-10-23), and each stage waited for the one
@@ -219,9 +224,12 @@ short and cached, and source reads faster than bytecode.'
   log "agent: $agent_name on $OC_MODEL${EFFORT:+ ($EFFORT)}${SCOUT_MODEL:+, scout $SCOUT_MODEL}, timeout ${TIMEOUT_MIN}m${STEPS:+, at most $STEPS steps per prompt}${CONTINUE_SESSION:+, resuming $CONTINUE_SESSION}"
   phase agent
   t0=$(date +%s)
+  # The prompt goes in on stdin: `opencode run` reads it there when stdin is not a terminal (1.19.4).
+  # As an argument, Linux caps it at 128 KB (MAX_ARG_STRLEN): a 146 KB council prompt failed with
+  # "Argument list too long" (Lykos P18, 2026-10-28).
   timeout --kill-after=30 "${TIMEOUT_MIN}m" \
-    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" "$prompt" \
-    >"$OUT/events.jsonl" 2>"$OUT/opencode.log"
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" \
+    <"$OUT/prompt.md" >"$OUT/events.jsonl" 2>"$OUT/opencode.log"
   agent_exit=$?
   agent_s=$(( $(date +%s) - t0 ))
   log "agent exit $agent_exit"

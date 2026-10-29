@@ -259,7 +259,8 @@ wording against the repo's style rules yourself.
 and free DeepSeek Flash each read the repo read-only to check the plan's claims, in parallel, blind to
 each other. The `merge` role (paid DeepSeek high, one pass, told to favour no advisor; `--merge ROLE|MODEL`
 or `COUNCIL_MERGE` picks another) writes one digest, `## Agreed`, `## Unique`, `## Contradicting`, each
-item tagged with its advisor. Resolve every
+item tagged with its advisor. A failed merge leaves the answers unmerged in `digest.md`. A plan whose
+claims are about Boxie itself: add `--with-box`, so members can read Boxie's source. Resolve every
 medium+ item (change the plan, or say in the plan why not) before the user sees it. RakunLoots P10
 (2026-10-26): DeepSeek and Gemini improved an Opus plan, and Codex still found a gap it had. One quick
 question: `ask <repo> --prompt q.md` (Sol alone).
@@ -317,8 +318,9 @@ review found medium+ bugs 3-4 rounds in a row after the orchestrator had called 
 ## Housekeeping
 
 - `delegate.sh gc` shows what disk it would free (model lists, session archives older than 14 days,
-  untagged images); `gc --yes` frees it. A run's launch already does `gc --yes` once a day in the
-  background (`runs/.gc.log`; `AUTO_GC=0` turns it off).
+  untagged images); `gc --yes` frees it. A run's launch already cleans runs/, branches and scratch
+  once a day in the background (`runs/.gc.log`; `AUTO_GC=0` turns it off); images and stopped
+  containers only go with a `gc --yes` by hand.
   Ask the user before any other `--yes`, such as `--days 3`.
 - An npm repo set up by the default `npm ci` keeps `node_modules` in a volume per slot; a run
   reinstalls only when `package-lock.json` or the installed tree changed (`NODE_MODULES_CACHE=0`: off).
