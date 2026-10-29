@@ -298,7 +298,9 @@ review found medium+ bugs 3-4 rounds in a row after the orchestrator had called 
 2. Rerun the verification on the host.
 3. Cherry-pick or merge under the repo's own commit rules (author, message, trailers). Delete rejected
    branches (`git branch -D agent/<name>`) and say why.
-4. `delegate.sh clean` after an interrupted run. Never edit `delegate.sh` while a run is executing it:
+4. `delegate.sh clean [<repo>]` after an interrupted run: it keeps live and parked containers, so other
+   sessions' runs survive (`--all` removes every one). `delegate.sh stop <repo> <run|loop>` stops one run,
+   or a loop's rounds and base suite, now. Never edit `delegate.sh` while a run is executing it:
    bash reads the script as it goes, and a run that outlives the edit executes the new text.
 
 ## What the harness already does for workers (do not repeat it in tasks)

@@ -353,7 +353,7 @@ test("loop: a BLOCKED fix round stops; the answer resumes that same worker", asy
 
 test("loop: a regression in the tests next to the change goes back with the neighbour command to run", async () => {
   const h = harness([
-    ["review", { "review-spec": [], "review-std": [] }], ["check", { neighbours: 1 }],
+    ["review", { "review-spec": [], "review-std": [] }], ["check", { neighbours: 1 }], ["check", { neighbours: 1 }],
     ["continue", "pass"],
     ["continue", []], ["check", { neighbours: 0 }],
   ]);
@@ -361,7 +361,7 @@ test("loop: a regression in the tests next to the change goes back with the neig
   h.deps.neighbours = () => ["src/a.test.ts"];
   const st = await loop(h.P, "impl", { name: "L" }, h.deps);
   assert.equal(st.next, "approve");
-  assert.match(h.msg(h.calls[2]), /## Regression[\s\S]*`npx tsx --test src\/a\.test\.ts` fails on your branch and passes on the base[\s\S]*trusted child[\s\S]*The tests next to your change: `npx tsx --test src\/a\.test\.ts`/);
+  assert.match(h.msg(h.calls[3]), /## Regression[\s\S]*`npx tsx --test src\/a\.test\.ts` fails on your branch and passes on the base[\s\S]*trusted child[\s\S]*The tests next to your change: `npx tsx --test src\/a\.test\.ts`/);
   assert.deepEqual(st.baseCache, { key: "src/a.test.ts", exit: 0, fails: [] });
   h.left();
 });
@@ -451,7 +451,7 @@ test("loop: progress.jsonl tells the live view every step, finding and decision,
 
 test("loop: with the base suite known, a check runs its neighbours on the branch only and compares names", async () => {
   const h = harness([
-    ["review", { "review-spec": [], "review-std": [] }], ["check", { neighbours: 1 }],
+    ["review", { "review-spec": [], "review-std": [] }], ["check", { neighbours: 1 }], ["check", { neighbours: 1 }],
     ["continue", "pass"],
     ["continue", []], ["check", { neighbours: 0 }],
   ]);
@@ -469,7 +469,7 @@ test("loop: with the base suite known, a check runs its neighbours on the branch
   };
   const st = await loop(h.P, "impl", { name: "L" }, h.deps);
   assert.doesNotMatch(fs.readFileSync(path.join(h.P.runs, "_loops", "L", "check1", ".agent-box-verify", "run.sh"), "utf8"), /NEIGHBOURS-BASE/);
-  const m = h.msg(h.calls[2]);
+  const m = h.msg(h.calls[3]);
   assert.match(m, /## Regression[\s\S]*trusted child/);
   assert.match(m, /These already fail on the base; ignore them: `linux path`\./, "only the base failures this run hit");
   assert.equal(st.baseCache, null);
@@ -542,5 +542,16 @@ test("loop: LOOP_LIVE_ASK=0 and LOOP_PARK=0 run the loop as before", async () =>
   assert.equal(st.next, "approve");
   assert.deepEqual(h.envs, [{ REVIEW_ASK: "0", AGENT_BOX_PARK: "0" }]);
   assert.deepEqual(h.unparked, []);
+  h.left();
+});
+
+test("loop: a neighbour regression that passes on its rerun is a flake, not sent to the worker", async () => {
+  const h = harness([["review", { "review-spec": [], "review-std": [] }], ["check", { neighbours: 1 }], ["check", { neighbours: 0 }]]);
+  h.P.map = { test_file_command: "npx tsx --test {files}" };
+  h.deps.neighbours = () => ["src/a.test.ts"];
+  const st = await loop(h.P, "impl", { name: "L" }, h.deps);
+  assert.equal(st.next, "approve");
+  assert.equal(h.calls[2].at(-1), "L-check1-again");
+  assert.match(fs.readFileSync(path.join(h.P.runs, "_loops", "L", "progress.jsonl"), "utf8"), /"ev":"flaky"/);
   h.left();
 });

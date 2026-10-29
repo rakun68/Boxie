@@ -455,6 +455,41 @@ if [ "${REVIEW:-0}" = 1 ] && [ -z "${PREAMBLE:-}" ] && [ "$agent_exit" = 0 ] && 
   { cat "$OUT/final-before-report.md"; printf '\n\n'; cat "$OUT/final.md"; } >"$OUT/final.tmp" && mv "$OUT/final.tmp" "$OUT/final.md"
 fi
 
+# 3f. Still no block after asking: another model copies the findings out of the reviewer's prose
+#     (TRANSCRIBE_MODEL, ROLE_transcribe: a free model). It adds and judges nothing; the loop reruns each
+#     reproduction as for any review. Lykos P7 T223 (2026-10-25): six real findings in prose, no block.
+if [ "${report_asked:-0}" = 1 ] && [ -n "${TRANSCRIBE_MODEL:-}" ] && ! findings_readable; then
+  log "transcribing the findings with $TRANSCRIBE_MODEL"
+  tmsg="A code reviewer ended with the message below. It states its findings in prose, with no \`agent-box-findings\` block. Reply with only that fenced block: a JSON array with one object per finding the message states, in this shape:
+
+$(sed -n '/^  ```agent-box-findings/,/^  ```$/p' /opt/agent-box/preamble-review.md 2>/dev/null)
+
+Copy what the message says: its words for issue, scenario and basis, its file and line, any reproduction file and command verbatim. Leave out a field it does not give. Add no finding, drop none, and judge none. \`[]\` when it states none.
+
+## The reviewer's message
+
+$(head -c 60000 "$OUT/final.md")"
+  timeout --kill-after=30 5m \
+    opencode run --auto --format json --agent "$agent_name" -m "$(oc_model "$TRANSCRIBE_MODEL")" "${attach_args[@]}" --title "$BRANCH-transcribe" \
+    "$tmsg" >"$OUT/transcribe.jsonl" 2>>"$OUT/opencode.log" || true
+  # The transcriber's last text, appended to final.md when its block parses: the reader takes it there.
+  TRANSCRIBED_BY="$TRANSCRIBE_MODEL" node -e '
+    const fs = require("fs");
+    const texts = [];
+    for (const l of fs.readFileSync("/out/transcribe.jsonl", "utf8").split("\n")) {
+      try { const e = JSON.parse(l); if (e.type === "text" && e.part && e.part.text) texts.push(e.part.text); } catch {}
+    }
+    const t = texts.at(-1) || "";
+    const b = t.match(/```[^\n`]*?agent-box-findings[^\n]*\n([\s\S]*?)\n\s*```/);
+    if (!b) process.exit(1);
+    let f; try { f = JSON.parse(b[1]); } catch { process.exit(1); }
+    if (f && !Array.isArray(f) && Array.isArray(f.findings)) f = f.findings;
+    if (!Array.isArray(f)) process.exit(1);
+    fs.appendFileSync("/out/final.md", `\n\n(Findings transcribed from the message above by ${process.env.TRANSCRIBED_BY}.)\n\n\`\`\`agent-box-findings\n${JSON.stringify(f, null, 2)}\n\`\`\`\n`);
+    fs.writeFileSync("/out/findings.json", JSON.stringify(f));' 2>>"$OUT/harness.log" \
+    && log "findings transcribed" || log "transcription gave no readable block"
+fi
+
 # 4. Review runs are read-only: record and discard any edit. Otherwise anything left uncommitted
 #    becomes one labelled commit, so nothing is lost. Sealed files are reverted.
 leftovers=0

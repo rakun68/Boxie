@@ -16,7 +16,7 @@ const { verdictOf, nextOf, checks } = await import("../lib/checks.mjs");
 const { normalizeFinding, selectFindings } = await import("../lib/finding.mjs");
 const { specRef } = await import("../lib/issue.mjs");
 const { detect, render } = await import("../lib/setup.mjs");
-const { loop, resume, addItems } = await import("../lib/loop.mjs");
+const { loop, resume, addItems, flakeCheck, uncheckedNote } = await import("../lib/loop.mjs");
 
 const dirWith = (files) => {
   const d = fs.mkdtempSync(path.join(tmp, "run-"));
@@ -202,4 +202,57 @@ test("loop resume adopts a fix round that finished after the loop stopped", asyn
   assert.equal(st.rounds.at(-1).run, "L-fix1-x");
   assert.equal(h.calls.filter((c) => c[0] === "continue" && !c.includes("--at")).length, 1, "no second fix");
   h.left();
+});
+
+// ─── Lykos P7 (2026-10-25 to 10-26) ─────────────────────────────────────────────────────────
+test("loop: --add text reaches a fixer even when the first review approves", async () => {
+  const h = harness([["review", clean], ["continue", "pass"], ["continue", []]]);
+  const st = await loop(h.P, "impl", { name: "L", roles: "review-both", add: "Sanitise tool names." }, h.deps);
+  assert.match(h.msg(h.calls[1]), /## From the orchestrator\s+Sanitise tool names\./);
+  assert.equal(st.next, "approve");
+  assert.equal(st.unsent, undefined);
+  h.left();
+});
+
+test("loop: --add text unsent at a stop is sent by the resume", async () => {
+  const script = [["review", { "review-both": { summary: { verdict: "timeout", agent_exit: 124 }, findings: [] } }]];
+  const h = harness(script);
+  let st = await loop(h.P, "impl", { name: "L", roles: "review-both", add: "Sanitise tool names." }, h.deps);
+  assert.equal(st.next, "fix_environment");
+  assert.equal(st.unsent.length, 1);
+  script.push(["review", clean], ["continue", "pass"], ["continue", []]);
+  st = await resume(h.P, "L", {}, h.deps);
+  assert.match(h.msg(h.calls[2]), /Sanitise tool names\./);
+  assert.equal(st.next, "approve");
+  h.left();
+});
+
+test("loop resume reads how steps run from the config as it is now; the loop's caps stay", async () => {
+  const script = [["review", { "review-both": { summary: { verdict: "timeout", agent_exit: 124 }, findings: [] } }]];
+  const h = harness(script);
+  let st = await loop(h.P, "impl", { name: "L", roles: "review-both", maxRounds: 2 }, h.deps);
+  assert.equal(st.settings.baseSuite, true);
+  h.P.env = { LOOP_BASE_SUITE: "0", LOOP_MAX_ROUNDS: "9" };
+  script.push(["review", clean]);
+  st = await resume(h.P, "L", {}, h.deps);
+  assert.equal(st.settings.baseSuite, false);
+  assert.equal(st.settings.maxRounds, 2);
+  h.left();
+});
+
+test("flakeCheck: a neighbour regression counts only for the tests that fail on the rerun too", () => {
+  const first = { regression: true, new_fails: ["ast-grep scan", "real bug"], tail: "t1" };
+  assert.deepEqual(flakeCheck(first, { regression: true, new_fails: ["real bug"], tail: "t2" }),
+    { regression: true, new_fails: ["real bug"], flaky: ["ast-grep scan"] });
+  assert.equal(flakeCheck(first, { regression: false, new_fails: [], tail: "" }).regression, false);
+  assert.equal(flakeCheck({ regression: true, new_fails: [] }, { regression: false, tail: "" }).regression, false);
+  assert.equal(flakeCheck(first, null).regression, true, "no rerun: the first stands");
+});
+
+test("uncheckedNote: an approve says the whole suite did not run, and on Windows that the host did not", () => {
+  const st = { run: "L-fix1", rounds: [{ neighbours: ["a.test.ts", "b.test.ts"] }] };
+  const [suite, host] = uncheckedNote({ repo: "/r" }, st, { suiteCmd: "npm test" }, "win32");
+  assert.match(suite, /whole suite not run on agent\/L-fix1 \(2 test file\(s\).*delegate\.sh check \/r agent\/L-fix1 --test "npm test"/);
+  assert.match(host, /Linux container only/);
+  assert.equal(uncheckedNote({ repo: "/r" }, st, { suiteCmd: "npm test" }, "linux").length, 1);
 });

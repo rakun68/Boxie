@@ -10,6 +10,7 @@
 //   REVIEW       1 = the `reviewer` agent (cannot edit the repo); otherwise the `worker` agent
 //   SEALED       newline-separated repo globs the worker may not edit (bash writes are caught after the run)
 //   SCOUT_MODEL  model for the read-only `scout` subagent; empty disables it
+//   TRANSCRIBE_MODEL review runs: the model that copies findings out of a reviewer's prose (run-task.sh 3f)
 //   SKILLS_ALLOW comma-separated skill names the agent may load; empty = all. box-* are always allowed
 //   ALLOW_WEB    1 = webfetch allowed
 //   ASK          0 = no ask_orchestrator tool (the worker can still ask with BLOCKED)
@@ -39,7 +40,7 @@ const own = (id) => id.startsWith("opencode/");
 const ocId = (id) => (own(id) ? id : `omniroute/${id}`);
 const models = {}, ownModels = {};
 const fallback = own(model || "") ? env.FREE_FALLBACK : "";
-for (const id of [model, env.SCOUT_MODEL, fallback]) {
+for (const id of [model, env.SCOUT_MODEL, fallback, review ? env.TRANSCRIBE_MODEL : ""]) {
   if (!id) continue;
   if (own(id)) ownModels[id.slice("opencode/".length)] = { limit: limitOf(id, 200000) }; // models.dev: 200k for both free models (2026-10-28)
   else models[id] = { name: id, limit: limitOf(id) };
