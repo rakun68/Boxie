@@ -39,8 +39,8 @@ The acceptance tests above (`sealed`) are fixed: make them pass without editing 
 
 ## Spec #15
 
-> **Phase:** P17, compaction parity ([phases.md](https://github.com/nudetiger/Lykos/blob/master/docs/plan/phases.md)).
-> **Decisions:** [ADR-0013](https://github.com/nudetiger/Lykos/blob/master/docs/adr/0013-parity-with-oh-my-pi-is-the-strength-target.md) (oh-my-pi is the strength target). Triage grill 2026-10-10, Q1–Q11.
+> **Phase:** P17, compaction parity ([phases.md](https://github.com/rakun68/Lykos/blob/master/docs/plan/phases.md)).
+> **Decisions:** [ADR-0013](https://github.com/rakun68/Lykos/blob/master/docs/adr/0013-parity-with-oh-my-pi-is-the-strength-target.md) (oh-my-pi is the strength target). Triage grill 2026-10-10, Q1–Q11.
 > **Source read:** oh-my-pi at `2e6b5b79a0c5b190797aace99f41fab6ae42e6c5` (`reference/oh-my-pi`, gitignored; clone command below).
 >
 > ## Problem Statement
