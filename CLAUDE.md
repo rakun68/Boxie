@@ -15,16 +15,16 @@ boxie.conf       Default configuration: engines, roles, review modes, loop caps,
 boxie.local.conf Machine-local overrides: BOXIE_SLOTS, BOXIE_ENGINE, BOXIE_NS (not in git)
 image/               Worker container definition: Dockerfile, run-task.sh, changed-tests.sh
 lib/                 Host-side Node.js orchestration logic: loop, ledger, verify, config, doctor
-projects/            Per-project configurations: <repo>.env (keys), <repo>.context.yaml, <repo>.Dockerfile
+projects/            Per-project configurations (not in git except example.*): <repo>.env, .context.yaml, .Dockerfile
 bench/               Benchmark fixtures, suites, and materialize scripts
 test/                Host-side Node.js unit tests (node --test)
-docs/                Documentation: known-gaps.md, ledger.md, project run stats and reviews
+docs/                Documentation. Per-project report folders (docs/<project>/) are not in git
 research/            Workflow analyses, model performance logs, findings
-tasks/               Task specifications and proof tests organized by project and phase
+tasks/               Task specifications by project and phase (not in git)
 runs/                Runtime execution logs and artifacts (gitignored)
 ledger/              Persistent run outcomes and metrics (gitignored)
-.agents/skills/      Vendored RakunCodingKit skills, tracked in git
-.agents/KIT.md       Kit version, sources, pinned commits
+.agents/skills/      RakunCodingKit skills installed locally (not in git)
+.agents/KIT.md       Kit version, sources, pinned commits (not in git)
 ```
 
 ## Build, test, run
@@ -49,9 +49,9 @@ Toolchain:
 - Shell scripts strictly use POSIX / bash syntax (`ls`, `$HOME`, `&&`, `|`, single quotes). No PowerShell or cmd idioms.
 - Host-to-container network paths use `host.containers.internal` (Podman) or `host.docker.internal` (Docker).
 - Unit tests use Node's built-in test runner (`node:test`, `node:assert/strict`). No extra test frameworks.
-- Do not check in `projects/*.env`, `boxie.local.conf`, or `runs/`.
+- Do not check in `projects/*` (except `example.*`), `tasks/`, `docs/<project>/`, `.agents/`, `boxie.local.conf`, or `runs/`.
 - Tasks are grouped under `tasks/<project>-<phase>/` (e.g. `tasks/lykos-p3/`, `tasks/rakunloots-p9/`).
-- `.agents/skills/` is vendored. Never hand-edit it. Refresh with `RakunCodingKit/update.sh`.
+- `.agents/skills/` is installed by the kit. Never hand-edit it. Refresh with `RakunCodingKit/update.sh`.
 
 ## Rules
 
@@ -70,7 +70,7 @@ Toolchain:
 
 ## Agent setup
 
-Built with **RakunCodingKit** (1.1.0). `.agents/skills/` is vendored and tracked in git.
+Built with **RakunCodingKit** (1.1.0). `.agents/skills/` is installed locally and ignored by git.
 `CLAUDE.md` is a copy of this file (symlinks require elevated privileges on Windows). See `.agents/KIT.md`
 for the exact sources and commits.
 

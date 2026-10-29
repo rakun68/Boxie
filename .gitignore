@@ -1,9 +1,35 @@
-projects/*.env
+# Secrets and machine-local settings
+projects/*
 !projects/example.env
-runs/
-node_modules/
-ledger/
-bench/.repos/
+!projects/example.Dockerfile
 boxie.local.conf
 prices.local.conf
+
+# Personal project data: task specs and per-project run reports
+tasks/
+docs/*/
+
+# Skills installed by RakunCodingKit (refresh with RakunCodingKit/update.sh)
+.agents/
+skills-lock.json
+
+# Agent and editor state
 .claude/
+.codex/
+.pi/
+.vscode/
+.idea/
+
+# Runtime output and caches
+runs/
+ledger/
+node_modules/
+bench/.repos/
+*.log
+*.tmp
+*.bundle
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store

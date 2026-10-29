@@ -4,7 +4,7 @@ Found while driving Lykos P2's third band (T208–T218) through `loop` with
 `BOXIE_SLOTS=3 BOXIE_PARK=1`, 2026-10-19 to 2026-10-20. Each entry says what was seen, why,
 and the workaround used. Lykos P3 (2026-10-22) added 5 to 8, and a startup-time survey added 9.
 All nine were fixed on 2026-10-23
-(**Fixed** lines); the RakunLoots P9 gaps are in docs/rakunloots-p9/rakunloots-phase9-2026-10-21.md.
+(**Fixed** lines); the RakunLoots P9 gaps are in docs/rakunloots-p9/rakunloots-phase9-2026-10-21.md (local only, not in git).
 Unit tests cover the host-side logic (test/gaps.test.mjs). The shell-side fixes are checked by
 `bash -n` and by hand, not yet in a live run.
 

@@ -9,7 +9,7 @@ Back to the [README](../README.md).
 | `boxie.conf` | yes | engine, roles, review and loop defaults, context and self-check settings |
 | `boxie.local.conf` | no | this machine's overrides: `BOXIE_SLOTS`, `BOXIE_ENGINE`, `BOXIE_NS`, `BOXIE_REPOS` |
 | `projects/<repo>.env` | no | the project's OmniRoute key and settings; any `boxie.conf` key wins here |
-| `projects/<repo>.context.yaml`, `.Dockerfile` | yes | context map; the project's toolchain image |
+| `projects/<repo>.context.yaml`, `.Dockerfile` | no (only `example.*`) | context map; the project's toolchain image |
 | `prices.conf`, `prices.local.conf` | yes / no | USD per 1M tokens per model, for `stats` |
 
 **A second checkout** (a worktree, a test install) sets `BOXIE_NS=<name>` in its
