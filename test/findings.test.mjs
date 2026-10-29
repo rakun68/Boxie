@@ -20,13 +20,13 @@ test("a findings block written as one escaped JSON string is read (DeepSeek revi
   ];
   // The shape seen: the JSON text with every quote and backslash escaped once, items on their own lines.
   const escaped = JSON.stringify(JSON.stringify(findings)).slice(1, -1).replace("},{", "},\n {");
-  const dir = withFinal("Review.\n\n```agent-box-findings\n" + escaped + "\n```\n");
-  assert.deepEqual(finalBlock(dir, "agent-box-findings"), findings);
+  const dir = withFinal("Review.\n\n```boxie-findings\n" + escaped + "\n```\n");
+  assert.deepEqual(finalBlock(dir, "boxie-findings"), findings);
 });
 
 test("a plain block still parses, and garbage is null", () => {
-  assert.deepEqual(finalBlock(withFinal("```agent-box-findings\n[]\n```\n"), "agent-box-findings"), []);
-  assert.equal(finalBlock(withFinal("```agent-box-findings\n[{oops\n```\n"), "agent-box-findings"), null);
+  assert.deepEqual(finalBlock(withFinal("```boxie-findings\n[]\n```\n"), "boxie-findings"), []);
+  assert.equal(finalBlock(withFinal("```boxie-findings\n[{oops\n```\n"), "boxie-findings"), null);
 });
 
 test("an unreadable findings block sends the orchestrator to the final message, not to done", () => {
@@ -39,18 +39,18 @@ test("an unreadable findings block sends the orchestrator to the final message, 
 // its last json fence, holding the array or an object with it under the block's key.
 import { bareBlock } from "../lib/ledger.mjs";
 test("bareBlock: bare object, bare array, json fence; a report needs status; prose is null", () => {
-  assert.deepEqual(bareBlock('{"findings":[{"n":1}]}', "agent-box-findings"), [{ n: 1 }]);
-  assert.deepEqual(bareBlock("[]", "agent-box-findings"), []);
-  assert.deepEqual(bareBlock("Done.\n```json\n[{\"n\":2}]\n```", "agent-box-findings"), [{ n: 2 }]);
-  assert.deepEqual(bareBlock('{"status":"done","tests":"pass"}', "agent-box-report"), { status: "done", tests: "pass" });
-  assert.equal(bareBlock('{"tests":"pass"}', "agent-box-report"), null);
-  assert.equal(bareBlock("No findings.", "agent-box-findings"), null);
+  assert.deepEqual(bareBlock('{"findings":[{"n":1}]}', "boxie-findings"), [{ n: 1 }]);
+  assert.deepEqual(bareBlock("[]", "boxie-findings"), []);
+  assert.deepEqual(bareBlock("Done.\n```json\n[{\"n\":2}]\n```", "boxie-findings"), [{ n: 2 }]);
+  assert.deepEqual(bareBlock('{"status":"done","tests":"pass"}', "boxie-report"), { status: "done", tests: "pass" });
+  assert.equal(bareBlock('{"tests":"pass"}', "boxie-report"), null);
+  assert.equal(bareBlock("No findings.", "boxie-findings"), null);
 });
 
 test("finalBlock: a fenced findings block holding {findings: [...]} reads as the array; a tests block stays an object", () => {
   const dir = tmp("ab-wrap-");
-  fs.writeFileSync(path.join(dir, "final.md"), 'Done.\n```agent-box-findings\n{"findings": [{"n": 1}]}\n```\n');
-  assert.deepEqual(finalBlock(dir, "agent-box-findings"), [{ n: 1 }]);
-  fs.writeFileSync(path.join(dir, "final.md"), '```agent-box-tests\n{"mode": "red", "tests": ["a"]}\n```\n');
-  assert.deepEqual(finalBlock(dir, "agent-box-tests"), { mode: "red", tests: ["a"] });
+  fs.writeFileSync(path.join(dir, "final.md"), 'Done.\n```boxie-findings\n{"findings": [{"n": 1}]}\n```\n');
+  assert.deepEqual(finalBlock(dir, "boxie-findings"), [{ n: 1 }]);
+  fs.writeFileSync(path.join(dir, "final.md"), '```boxie-tests\n{"mode": "red", "tests": ["a"]}\n```\n');
+  assert.deepEqual(finalBlock(dir, "boxie-tests"), { mode: "red", tests: ["a"] });
 });

@@ -17,7 +17,7 @@ function setup() {
   g(repo, "add", "a.txt"); g(repo, "commit", "-qm", "base");
   const base = g(repo, "rev-parse", "HEAD");
   g(repo, "checkout", "-qb", "agent/t1");
-  const w = ["-c", "user.name=agent-box (deepseek-flash)", "-c", "user.email=agent-box@localhost"];
+  const w = ["-c", "user.name=boxie (deepseek-flash)", "-c", "user.email=boxie@localhost"];
   for (const n of ["b", "c"]) {
     fs.writeFileSync(path.join(repo, `${n}.txt`), `${n}\n`);
     g(repo, "add", `${n}.txt`); g(repo, ...w, "commit", "-qm", `add ${n}`);
@@ -33,7 +33,7 @@ test("worker commits take the repo's identity, keep their dates and name the wor
   assert.equal(r.rewritten, 2);
   assert.equal(g(repo, "log", "--format=%an <%ae>|%cn <%ce>", `${base}..agent/t1`), "Owner <owner@example.com>|Owner <owner@example.com>\n".repeat(2).trimEnd());
   assert.equal(g(repo, "log", "--format=%ad|%cd", `${base}..agent/t1`), before);
-  assert.match(g(repo, "log", "-1", "--format=%B", "agent/t1"), /^add c\n\nAgent-Box-Worker: agent-box \(deepseek-flash\)$/);
+  assert.match(g(repo, "log", "-1", "--format=%B", "agent/t1"), /^add c\n\nBoxie-Worker: boxie \(deepseek-flash\)$/);
   assert.equal(g(repo, "rev-parse", "agent/t1^^"), base);
 });
 

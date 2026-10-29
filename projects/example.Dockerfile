@@ -1,6 +1,6 @@
 # Copy to projects/<repo>.Dockerfile and uncomment what the project needs, or let `delegate.sh setup <repo>`
 # write it. Then: delegate.sh build <repo>. The build sees only this file. Generated: node lib/setup.mjs --example
-FROM agent-box:latest
+FROM boxie:latest
 USER root
 
 # Go (official image). CACHES: go, gobuild.

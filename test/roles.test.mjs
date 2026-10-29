@@ -1,4 +1,4 @@
-// Per-project role overrides: a ROLE_* line in projects/<repo>.env wins over agent-box.conf, in
+// Per-project role overrides: a ROLE_* line in projects/<repo>.env wins over boxie.conf, in
 // delegate.sh (run, review, ask resolve roles after loading the project) and in ticket mode.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,13 +12,13 @@ import { projectSettings, conf } from "../lib/ticket.mjs";
 const BOX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("delegate.sh roles: the project file overrides one role and keeps the rest", () => {
-  // A repo with no projects/<name>.env of its own: AGENT_BOX_PROJECT_ENV names the settings file.
+  // A repo with no projects/<name>.env of its own: BOXIE_PROJECT_ENV names the settings file.
   const dir = tmp("ab-roles-");
   execFileSync("git", ["-C", dir, "init", "-q"]);
   const env = path.join(dir, "settings.env");
   fs.writeFileSync(env, 'ROLE_review_spec="cursor/kimi-k3-high"   # spec review on another family\nREVIEW_ROLES="review-spec"\n');
   const out = execFileSync("bash", [path.join(BOX, "delegate.sh"), "roles", dir],
-    { encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env } });
+    { encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env } });
   const row = (n) => out.split("\n").find((l) => l.split(/\s+/)[0] === n)?.split(/\s+/);
   assert.deepEqual(row("review-spec"), ["review-spec", "project", "cursor/kimi-k3-high"]);
   assert.deepEqual(row("REVIEW_ROLES"), ["REVIEW_ROLES", "project", "review-spec"]);
@@ -26,7 +26,7 @@ test("delegate.sh roles: the project file overrides one role and keeps the rest"
   assert.equal(row("implement")?.slice(0, 3).join(" "), `implement conf ${global}`);
 });
 
-test("ticket mode: project settings parse as bash reads them and win over agent-box.conf", () => {
+test("ticket mode: project settings parse as bash reads them and win over boxie.conf", () => {
   const env = projectSettings([
     'ROLE_escalate="x/opus high"  # comment',
     "export TICKET_ESCALATE_ROLE=implement-hard # bare value, comment cut",
@@ -43,7 +43,7 @@ test("ticket mode: project settings parse as bash reads them and win over agent-
   const P = { env };
   assert.equal(conf("TICKET_ESCALATE_ROLE", P), "implement-hard");
   assert.equal(conf("ROLE_escalate", P), "x/opus high");
-  assert.equal(conf("ROLE_implement", P), conf("ROLE_implement"), "an unset key falls back to agent-box.conf");
+  assert.equal(conf("ROLE_implement", P), conf("ROLE_implement"), "an unset key falls back to boxie.conf");
 });
 
 test("review relaunches delegate.sh by its absolute path, also when called as a relative 'delegate.sh'", () => {
@@ -60,7 +60,7 @@ test("review relaunches delegate.sh by its absolute path, also when called as a 
   const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
   try {
     execFileSync("bash", ["delegate.sh", "review", dir, "agent/x", "--roles", "review-spec"],
-      { cwd: BOX, encoding: "utf8", stdio: "pipe", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env, AGENT_BOX_HERDR: "0" } });
+      { cwd: BOX, encoding: "utf8", stdio: "pipe", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
     const log = fs.readdirSync(runs).filter((f) => /^\.rv-.*-review-spec\.log$/.test(f)).map((f) => fs.readFileSync(path.join(runs, f), "utf8")).join("");
     assert.doesNotMatch(log, /command not found/);
     assert.match(log, /OMNIROUTE_API_KEY is empty/, "the relaunched run started and reached its own checks");
@@ -77,7 +77,7 @@ test("spec reviewer: never the implementer's family", async () => {
   const ds = "deepseek/deepseek-flash-max", opus = "antigravity/claude-opus-4-6-thinking";
   assert.equal(specRole("gemini-3.8-flash-tiered", ds, opus), "review-spec");
   assert.equal(specRole("deepseek/deepseek-flash", ds, opus), "review-spec-alt");
-  assert.equal(specRole(undefined, ds, opus), "review-spec", "a branch agent-box did not make keeps the default");
+  assert.equal(specRole(undefined, ds, opus), "review-spec", "a branch boxie did not make keeps the default");
   assert.equal(specRole(ds, ds, "deepseek/deepseek-pro"), "review-spec", "an alt of the same family is no better");
 });
 
@@ -97,7 +97,7 @@ test("review: a branch Claude wrote gets review-spec-alt; in mode both, a DeepSe
   const review = (model, ...a) => {
     fs.writeFileSync(path.join(runs, "ds-run", "summary.json"), JSON.stringify({ model }, null, 2));
     return spawnSync("bash", ["delegate.sh", "review", dir, "agent/ds-run", ...a],
-      { cwd: BOX, encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env, AGENT_BOX_HERDR: "0" } });
+      { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
   };
   try {
     const r = review("antigravity/claude-opus-4-6-thinking-high", "--name", "A");

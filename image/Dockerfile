@@ -1,4 +1,4 @@
-# agent-box base worker image: Node, git, the search tools and OpenCode. No credentials are baked in.
+# boxie base worker image: Node, git, the search tools and OpenCode. No credentials are baked in.
 # A project that needs more (a JDK, Go, Rust, CMake) adds it in projects/<repo>.Dockerfile, FROM this
 # image, built by `delegate.sh build <repo>`. make, g++ and python3 stay: node-gyp builds need them.
 FROM node:24-bookworm
@@ -13,18 +13,18 @@ RUN npm install -g "opencode-ai@${OPENCODE_VERSION}" && npm cache clean --force
 
 # Vineflower (Java decompiler, Apache-2.0) for `api src`: workers read dependency behaviour as source
 # instead of javap -c bytecode. Used only where the project image has a JDK. Pinned and verified.
-RUN mkdir -p /opt/agent-box \
- && curl -fsSL -o /opt/agent-box/vineflower.jar https://repo1.maven.org/maven2/org/vineflower/vineflower/1.10.1/vineflower-1.10.1.jar \
- && echo "b9b208e50793b64657a6b6292067526613f549de7405f9243624b02f4276e409  /opt/agent-box/vineflower.jar" | sha256sum -c -
+RUN mkdir -p /opt/boxie \
+ && curl -fsSL -o /opt/boxie/vineflower.jar https://repo1.maven.org/maven2/org/vineflower/vineflower/1.10.1/vineflower-1.10.1.jar \
+ && echo "b9b208e50793b64657a6b6292067526613f549de7405f9243624b02f4276e409  /opt/boxie/vineflower.jar" | sha256sum -c -
 
 COPY run-task.sh /usr/local/bin/run-task.sh
 COPY api.mjs /usr/local/bin/api
-COPY changed-tests.sh /opt/agent-box/changed-tests.sh
-COPY preamble.md preamble-review.md preamble-explore.md preamble-speccheck.md make-config.mjs ask-mcp.mjs progress.mjs syntax-check.mjs last-stop.mjs recover-final.mjs /opt/agent-box/
-COPY plugin.js /home/node/.config/opencode/plugins/agent-box.js
+COPY changed-tests.sh /opt/boxie/changed-tests.sh
+COPY preamble.md preamble-review.md preamble-explore.md preamble-speccheck.md make-config.mjs ask-mcp.mjs progress.mjs syntax-check.mjs last-stop.mjs recover-final.mjs /opt/boxie/
+COPY plugin.js /home/node/.config/opencode/plugins/boxie.js
 COPY skills/ /home/node/.config/opencode/skills/
-RUN chmod 755 /usr/local/bin/run-task.sh /usr/local/bin/api /opt/agent-box/changed-tests.sh \
- && mkdir -p /work/repo/node_modules /in /out /home/node/.npm /home/node/.cache/agent-box-api \
+RUN chmod 755 /usr/local/bin/run-task.sh /usr/local/bin/api /opt/boxie/changed-tests.sh \
+ && mkdir -p /work/repo/node_modules /in /out /home/node/.npm /home/node/.cache/boxie-api \
  && chown -R node:node /work /in /out /home/node
 
 USER node

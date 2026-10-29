@@ -16,7 +16,7 @@ function config(env) {
 
 test("a reviewer has no ask tool unless REVIEW_ASK=1; ASK=0 still turns it off", () => {
   assert.equal(config({ REVIEW: "1" }).mcp, undefined);
-  assert.deepEqual(config({ REVIEW: "1", REVIEW_ASK: "1" }).mcp?.orchestrator?.command, ["node", "/opt/agent-box/ask-mcp.mjs"]);
+  assert.deepEqual(config({ REVIEW: "1", REVIEW_ASK: "1" }).mcp?.orchestrator?.command, ["node", "/opt/boxie/ask-mcp.mjs"]);
   assert.equal(config({ REVIEW: "1", REVIEW_ASK: "1", ASK: "0" }).mcp, undefined);
   assert.equal(config({ REVIEW: "1", REVIEW_ASK: "1" }).agent.reviewer.permission.edit["*"], "deny");
 });

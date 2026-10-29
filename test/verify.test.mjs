@@ -56,7 +56,7 @@ test("the script, run for real: a failing reproduction proves, a passing one doe
       repros: [{ id: "1.spec.1", file: scratch(1), content: "exit 3\n", cmd: `bash ${scratch(1)}` },
                { id: "1.spec.2", file: scratch(2), content: "exit 0\n", cmd: `bash ${scratch(2)}` }] });
     for (const [rel, text] of Object.entries(files)) r.put(rel, text);
-    return parseVerify(execFileSync("bash", [path.join(r.dir, ".agent-box-verify", "run.sh")], { encoding: "utf8" }));
+    return parseVerify(execFileSync("bash", [path.join(r.dir, ".boxie-verify", "run.sh")], { encoding: "utf8" }));
   };
   const a = run("node a.test.js");
   assert.deepEqual(a.repro, { "1.spec.1": 3, "1.spec.2": 0 });
@@ -69,22 +69,22 @@ test("the script, run for real: a failing reproduction proves, a passing one doe
 });
 
 test("parseVerify: no neighbour run is null, and the tail is the indented block", () => {
-  assert.deepEqual(parseVerify("AGENT-BOX-REPRO 2.spec.1 exit 1\n    boom\n"), { repro: { "2.spec.1": 1 }, reproBase: {}, neighbours: null });
-  const p = parseVerify("AGENT-BOX-NEIGHBOURS exit 0\n    ok 1\n");
+  assert.deepEqual(parseVerify("BOXIE-REPRO 2.spec.1 exit 1\n    boom\n"), { repro: { "2.spec.1": 1 }, reproBase: {}, neighbours: null });
+  const p = parseVerify("BOXIE-NEIGHBOURS exit 0\n    ok 1\n");
   assert.deepEqual(p.neighbours, { exit: 0, base_exit: null, tail: "ok 1", fails: [], base_fails: null, new_fails: [], regression: false });
 });
 
 test("parseVerify: a base that already fails hides nothing; names decide, and a known base result stands in", () => {
-  const log = (b) => `AGENT-BOX-NEIGHBOURS exit 1\n    x\nAGENT-BOX-NFAIL linux path\nAGENT-BOX-NFAIL ${b}\n`;
-  const withBase = parseVerify(`${log("trusted child")}AGENT-BOX-NEIGHBOURS-BASE exit 1\nAGENT-BOX-NFAIL-BASE linux path\n`);
+  const log = (b) => `BOXIE-NEIGHBOURS exit 1\n    x\nBOXIE-NFAIL linux path\nBOXIE-NFAIL ${b}\n`;
+  const withBase = parseVerify(`${log("trusted child")}BOXIE-NEIGHBOURS-BASE exit 1\nBOXIE-NFAIL-BASE linux path\n`);
   assert.equal(withBase.neighbours.regression, true);
   assert.deepEqual(withBase.neighbours.new_fails, ["trusted child"]);
-  const same = parseVerify("AGENT-BOX-NEIGHBOURS exit 1\nAGENT-BOX-NFAIL linux path\nAGENT-BOX-NEIGHBOURS-BASE exit 1\nAGENT-BOX-NFAIL-BASE linux path\n");
+  const same = parseVerify("BOXIE-NEIGHBOURS exit 1\nBOXIE-NFAIL linux path\nBOXIE-NEIGHBOURS-BASE exit 1\nBOXIE-NFAIL-BASE linux path\n");
   assert.equal(same.neighbours.regression, false, "the same failure on the base is not this change's");
   const cached = parseVerify(log("trusted child"), { exit: 1, fails: ["linux path"] });
   assert.equal(cached.neighbours.regression, true);
   assert.equal(cached.neighbours.base_exit, 1);
-  assert.deepEqual(parseVerify("AGENT-BOX-REPRO 3.spec.1 exit 1\nAGENT-BOX-REPRO-BASE 3.spec.1 exit 0\n").reproBase, { "3.spec.1": 0 });
+  assert.deepEqual(parseVerify("BOXIE-REPRO 3.spec.1 exit 1\nBOXIE-REPRO-BASE 3.spec.1 exit 0\n").reproBase, { "3.spec.1": 0 });
 });
 
 test("the script, run for real: failing test names on both sides, base reproductions, and no base run when it is known", () => {
@@ -103,7 +103,7 @@ test("the script, run for real: failing test names on both sides, base reproduct
     for (const [rel, text] of Object.entries(files)) r.put(rel, text);
     // A node --test inside this test run would report to it (NODE_TEST_CONTEXT) and exit 0.
     const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
-    return execFileSync("bash", [path.join(r.dir, ".agent-box-verify", "run.sh")], { encoding: "utf8", env });
+    return execFileSync("bash", [path.join(r.dir, ".boxie-verify", "run.sh")], { encoding: "utf8", env });
   };
   const first = run(false, 1), v = parseVerify(first);
   assert.deepEqual([v.repro["1.spec.1"], v.reproBase["1.spec.1"]], [1, 0], "fails on the branch, passes on the base");
@@ -111,7 +111,7 @@ test("the script, run for real: failing test names on both sides, base reproduct
   assert.deepEqual(v.neighbours.new_fails, ["a is one"]);
   assert.equal(v.neighbours.regression, true);
   const log = run(true, 2);
-  assert.doesNotMatch(log, /AGENT-BOX-NEIGHBOURS-BASE/);
+  assert.doesNotMatch(log, /BOXIE-NEIGHBOURS-BASE/);
   assert.equal(parseVerify(log, { exit: 1, fails: ["always broken"] }).neighbours.regression, true);
 });
 
@@ -122,11 +122,11 @@ test("the base suite, run for real: exit, failing names and seconds; a crash or 
   const files = suiteFiles({ cmd: "printf 'not ok 1 - linux path\\nok 2 - fine\\n'; exit 1", root: r.dir.replace(/\\/g, "/") });
   for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(r.dir, f)), { recursive: true }); fs.writeFileSync(path.join(r.dir, f), text); }
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
-  const log = execFileSync("bash", [path.join(r.dir, ".agent-box-verify", "run.sh")], { encoding: "utf8", env });
+  const log = execFileSync("bash", [path.join(r.dir, ".boxie-verify", "run.sh")], { encoding: "utf8", env });
   assert.deepEqual(parseSuite(log), { exit: 1, fails: ["linux path"] });
   assert.equal(typeof checkTimes(log).suite, "number");
-  assert.equal(parseSuite("AGENT-BOX-SUITE exit 1\n"), null, "failed with no names: a crash");
-  assert.equal(parseSuite("AGENT-BOX-SUITE exit 124\nAGENT-BOX-SFAIL x\n"), null, "timed out");
-  assert.deepEqual(parseSuite("AGENT-BOX-SUITE exit 0\n"), { exit: 0, fails: [] });
-  assert.deepEqual(checkTimes("AGENT-BOX-TIME repro:1.spec.1 4\nAGENT-BOX-TIME neighbours 51\n"), { "repro:1.spec.1": 4, neighbours: 51 });
+  assert.equal(parseSuite("BOXIE-SUITE exit 1\n"), null, "failed with no names: a crash");
+  assert.equal(parseSuite("BOXIE-SUITE exit 124\nBOXIE-SFAIL x\n"), null, "timed out");
+  assert.deepEqual(parseSuite("BOXIE-SUITE exit 0\n"), { exit: 0, fails: [] });
+  assert.deepEqual(checkTimes("BOXIE-TIME repro:1.spec.1 4\nBOXIE-TIME neighbours 51\n"), { "repro:1.spec.1": 4, neighbours: 51 });
 });

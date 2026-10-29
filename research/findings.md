@@ -1,4 +1,4 @@
-# Findings: measured behaviour of agent-box and its workers
+# Findings: measured behaviour of Boxie and its workers
 
 Measured facts only, each with its date and sample size. One run is an anecdote, not a rate. Nothing
 here is backfilled or estimated; "unmeasured" means unmeasured. Keep it that way: this file is the
@@ -8,7 +8,7 @@ baseline Lykos (as an MCP worker) will be compared against.
 
 Run the same task file, at the same base commit, through both. Record per run:
 
-| metric | where agent-box keeps it |
+| metric | where Boxie keeps it |
 | --- | --- |
 | correct (gate passes on the host) | your own test run; `summary.json` `test_exit` is the harness's |
 | wall time, agent time | `summary.json` `seconds`; first to last event in `events.jsonl` |
@@ -61,7 +61,7 @@ Task: add one Javadoc sentence to `CloseMatcher.of`. All diffs were one line, al
 | run | harness | tool calls | total s | input tokens (uncached + cached) |
 | --- | --- | --- | --- | --- |
 | Gemini 3.8 Flash medium | before speed changes | 66 | 546 | 288k + 2.37M |
-| Gemini 3.8 Flash medium | after (agent-box 752dd12) | 50 | 345 | 216k + 2.62M |
+| Gemini 3.8 Flash medium | after (Boxie 752dd12) | 50 | 345 | 216k + 2.62M |
 | Composer 2.5 fast (`quick`) | after | 19 | 77 | 590k + 0 |
 | Composer 2.5 fast (`quick`) | after, herdr test | 32 | 129 | 1.31M + 0 |
 
@@ -96,7 +96,7 @@ mechanically).
 ## 4. Harness facts
 
 - Session resume (`continue`) works: a resumed Gemini worker edited without re-reading the file and
-  recalled its round-1 reading (155,619 cached tokens on resume). Runs before agent-box d58623f have
+  recalled its round-1 reading (155,619 cached tokens on resume). Runs before Boxie d58623f have
   no saved session.
 - Mid-run questions: a Gemini worker asked once, got an empty 45 s tool reply, called
   `wait_for_answer`, received the answer 70 s after asking.
@@ -144,7 +144,7 @@ total; tokens are uncached input / cache read.
   (`["120","15","15","7"]`); the tie and `--limit` hidden cases fail as a consequence. The spec implies
   numeric order only through "aligns as numbers".
 - OUT-OF-SCOPE on occurrence-exceptions: both workers added 13 lines to `test/conflicts.test.ts`, and
-  both passed the hidden check. Since agent-box 6fb8e25 a test file with only added lines is in scope.
+  both passed the hidden check. Since Boxie 6fb8e25 a test file with only added lines is in scope.
 
 ### Second round (2026-10-12, harness 6fb8e25 plus the uncommitted checks below)
 
@@ -194,7 +194,7 @@ a misreport of a tool result.
 
 - TUI mode per worker (`podman stats`): `opencode serve` 700 MB, `opencode attach` 366 MB, the
   `opencode run --attach` client 271 MB; about 1.3 GB against 623 MB for a plain run.
-  Benchmarks therefore run with `AGENT_BOX_TUI=0`.
+  Benchmarks therefore run with `BOXIE_TUI=0`.
 - `progress.mjs` and `ask-mcp.mjs`: 46–49 MB each.
 
 ## 9. Advice taken (Kimi K3, one pass, 15 s)
@@ -249,7 +249,7 @@ deepseek-flash off-peak miss 0.15, hit 0.003, output 0.60.
 
 Not comparable, and why:
 
-- **The agent-box worker saw the landed tests; Sonnet wrote its own.** Those tests encode what the old
+- **The Boxie worker saw the landed tests; Sonnet wrote its own.** Those tests encode what the old
   review rounds added, so Sonnet's first-commit score is not a capability comparison. It measures the
   workflow as designed (acceptance test first), with the cost of writing that test left out: here it
   came free from history.
@@ -271,11 +271,11 @@ Not comparable, and why:
 ## 11. End to end: before and after Actions 12 and 13a, against Sonnet 5.5 (2026-10-13)
 
 Two Lykos tickets the Sonnet 5.5 pipeline needed many review rounds for, chosen because Sonnet's first
-commit fails the hidden check. Each agent-box arm got a symptom-only report (`bench/suites/real/*/
+commit fails the hidden check. Each Boxie arm got a symptom-only report (`bench/suites/real/*/
 report.md`: no file names, the issue's requirements, the exact strings the tests assert) and never
 saw the hidden tests. Rules were fixed in a driver: implement; on a gate failure one continue, then
 implement-hard, then escalate; two-axis review; every CONFIRMED finding forwarded in one fix round.
-"pre" = harness 3fd006f (worktree `agent-box-pre`), "new" = HEAD with `hunt`. One run per arm. The
+"pre" = harness 3fd006f (worktree `boxie-pre`), "new" = HEAD with `hunt`. One run per arm. The
 user stopped the last two runs after a day.
 
 T194 (#49, untrusted project config runs host commands; 13 of 95 hidden tests fail on the base):
@@ -287,7 +287,7 @@ T194 (#49, untrusted project config runs host commands; 13 of 95 hidden tests fa
 | new, hunt failed (dead model id), old path | 5 | 5 | 115 min | $11.01 | $0.17 |
 | new, hunt worked | 5 | 5 | 138 min | $11.02 | $0.18 |
 
-All three agent-box runs fail the same 5: the gate's command discovered from the project (3, never
+All three Boxie runs fail the same 5: the gate's command discovered from the project (3, never
 withheld) and two regressions (a trusted reviewer child, the gate inside a container). Sonnet's first
 commit failed 5 different ones: child sessions (2) and gate discovery (3), no regression. The pre
 run's DeepSeek review flagged gate discovery as CONFIRMED critical; one fix round did not close it.
@@ -300,14 +300,14 @@ T174b (#40, quoted host-path translation; 8 of 62 fail on the base):
 | pre: Gemini no change twice, then DeepSeek | 1 | 1 | 68 min | $2.35 | $0.34 |
 | new: hunt, then Gemini | 1 | not reached (stopped in the fix round) | 76 min so far | $3.36 so far | $0.11 |
 
-Both agent-box arms miss one sub-case: git's subcommand after its own valued options
+Both Boxie arms miss one sub-case: git's subcommand after its own valued options
 (`--attr-source`, `--exec-path`, two-word options), which Sonnet reached only in review rounds 4-6.
 
 - The hunt worked twice: on T194 a 476-line red test, 12 cases, 4 locations (30 min, $1.72); on
   T174b after one fix round (it had also edited a doc). It did not change either outcome.
 - Action 12's swap fired end to end (review-spec-alt on the DeepSeek branch) but the run was stopped
   before its findings: its effect is unmeasured.
-- First attempt: agent-box beats Sonnet's first commit on T174b (1 against 10 failing) and ties on
+- First attempt: Boxie beats Sonnet's first commit on T174b (1 against 10 failing) and ties on
   T194 in count. Sonnet's pipeline wins at the end because it loops review rounds until clean.
 
 Harness defects found: Gemini 3.1 Pro gone upstream (bughunt and tests now Gemini Flash, 9a6e8bd);
@@ -326,7 +326,7 @@ Cause: with `TUI=1` the worker runs as `opencode run --attach` against an in-con
 Evidence, rv-20261015-050357-review-spec:
 - last event: `{"type": "step_start", ... "messageID": "msg_13c78386f001HeaqU2BCKauoDW"}`.
 - the same message in the session store (`opencode-data.tgz`): `"finish":"stop"`, 1839 output tokens,
-  a text part holding the full `agent-box-findings` block, then its `step-finish`.
+  a text part holding the full `boxie-findings` block, then its `step-finish`.
 - no `error` event, no `length` finish, largest step 6917 output tokens: not the cap, not the provider,
   not `cut_resumes`, not the parser.
 
@@ -371,7 +371,7 @@ includes slot waits and, after, the orchestrator's minutes ruling on the spec ch
   surfaced by `wait --questions`, answered, used, same session.
 - Parking: each after-side RakunMiniItems loop reused one container (the reviewer's recheck: no
   setup, session kept). The fix rounds started fresh because the implement runs were not started
-  parked; start loop-bound runs with `AGENT_BOX_PARK=1`.
+  parked; start loop-bound runs with `BOXIE_PARK=1`.
 
 Reading: the spec check is worth its ~3 minutes on tickets whose task text can contradict the docs
 (it catches what reviews otherwise catch a round later); it does not make loops faster by itself.
@@ -479,7 +479,7 @@ Phase9 #112 accepted13af9d5: same-session Max fix3 433s, fix4 358s; same High fi
 
 2026-10-23 final phase9 verification: High p9-114-probe-review1015s included900sagenttimeout124;recovered[]wasNOTaccepted. SameHighrecheck185sagent_exit0findings[],4parsertests and actualSpigot0unexpected/4externalindependentlyverified; fullstatsJSONindocs. Finalfullprojectcheck7m54,135tasks,1480root35existingconditional skips+126Folia24Fancy17Java17loader506packetadaptertests(all0fail/errors). 6realserverchecks351PASS0FAIL,0RakunLootsWARNERROR(normalJVMfinalC513jar),externalWindowsOSHItraceclassificationexplicit/retained. Helper23ed8e4localonlypublishedasrepropatch;fullverification008664d. PR115ready/MERGEABLE/attached,issuescloseonmerge;allmodelsoursfinished. No like-for-like model benchmark inference from these tasks.
 
-2026-10-23 fresh full phase9 code review at008664d: DeepSeekHigh initial1645s (setup19,agent1596,test0),181steps205tools,input906606/output238854/cache16753280; same-session targeted complete454s (setup22,agent384,test0),agent_exit0,review_violationfalse. Retained reviewer1 high Folia physical menu remains open at plugin disable, reviewer3 low wiki session lifecycle retention. Dropped2 requirement already met (barrier/high warning plus caller text),4 explicitly silent info perfull108,5 insufficient normal-player trigger/contract. No tests/probes rerun or product edits. Agentbox standard compile-only setup ran. Full findings/triage docs/rakunloots-p9/rakunloots-phase9-code-review-2026-10-23.md. Spec truncation mitigated via full106–112 in same-session followup; no parallel reviewers.
+2026-10-23 fresh full phase9 code review at008664d: DeepSeekHigh initial1645s (setup19,agent1596,test0),181steps205tools,input906606/output238854/cache16753280; same-session targeted complete454s (setup22,agent384,test0),agent_exit0,review_violationfalse. Retained reviewer1 high Folia physical menu remains open at plugin disable, reviewer3 low wiki session lifecycle retention. Dropped2 requirement already met (barrier/high warning plus caller text),4 explicitly silent info perfull108,5 insufficient normal-player trigger/contract. No tests/probes rerun or product edits. Boxie standard compile-only setup ran. Full findings/triage docs/rakunloots-p9/rakunloots-phase9-code-review-2026-10-23.md. Spec truncation mitigated via full106–112 in same-session followup; no parallel reviewers.
 
 2026-10-23 Phase9 follow-up: Max implementation p9-review-fixes-impl1477s (setup69/agent807/test8), High recheck p9-review-fixes-review1165s (setup61/agent1006),38steps46tools/tool460s,input208978/output77227/cache3521664. Exact statsJSON: docs/rakunloots-p9/rakunloots-p9-review-fixes-{impl,review}-stats.json. Review completed agent_exit0; supported Folia shutdown fix accepted in review, remaining session race ID6 independently RED in retained Phase9SupersededRetirementProofTest (1test1failure41s). Same Max continuation in progress; not yet accepted. Root fullcheck31 successful after memory retry with --max-workers=1 (1m33s), root1491/35existing skips,Folia131,Fancy24,Java17loader17,packet506 all0fail/errors. Initial fullcheck native OOM and subsequent Probe startup native OOM are environmental failures, not green evidence. Fixedjar server runs remain pending. No like-for-like model comparison inferred.
 

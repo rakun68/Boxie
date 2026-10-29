@@ -1,6 +1,6 @@
 # bench: frozen, repeatable benchmark tasks
 
-The same task files, at the same base commits, for every model, every agent-box version and any other
+The same task files, at the same base commits, for every model, every Boxie version and any other
 harness (Lykos). A task's result is its **hidden check**, run after the worker is gone on files the
 worker never saw. The worker's own report is never the result.
 
@@ -44,7 +44,7 @@ A sealed failing test belongs in the base commit, as an orchestrator would commi
 delegating; that is what the `-reserve`, `-sort` and `-midnight` overlays are for.
 
 `materialize.mjs` builds the commit with plumbing (`hash-object`, `update-index`, `commit-tree`):
-LF-normalized content, mode 100644, author and committer `bench <bench@agent-box.invalid>`, date
+LF-normalized content, mode 100644, author and committer `bench <bench@boxie.invalid>`, date
 2026-01-01T00:00:00Z, message `fixture <name>`, with `core.autocrlf` and `commit.gpgsign` off. The sha
 above is therefore the same on every machine. If `main` already is that commit and the checkout is
 clean, the repo is reused; otherwise `main` is reset to it (other branches, e.g. fetched results, stay).
@@ -104,7 +104,7 @@ changed, vanished or appeared, comparing LF-normalized sha256 hashes against the
 | base + hidden, check | FAIL (`pass` tasks); PASS (`blocked` tasks) |
 | reference.patch + hidden, check | PASS; must also pass the visible `test:`; absent for `blocked` tasks |
 | each cheat-*.patch + hidden, check | FAIL |
-| visible `test:` on the base | FAIL when the task seals a test (else agent-box reports WEAK-SPEC) |
+| visible `test:` on the base | FAIL when the task seals a test (else Boxie reports WEAK-SPEC) |
 
 It also checks that frontmatter paths exist in the base, that every `hidden/.bench/guard.mjs` is
 byte-identical to `bench/lib/guard.mjs`, and that every check finishes in under 10 s.

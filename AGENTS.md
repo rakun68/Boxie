@@ -1,4 +1,4 @@
-# agent-box — agent context
+# Boxie — agent context
 
 ## What this is
 
@@ -11,8 +11,8 @@ assistant or an IDE plugin — it is an isolated headless execution harness for 
 
 ```text
 delegate.sh          Main CLI entrypoint: run, loop, review, continue, resume, doctor, clean, gc, stats
-agent-box.conf       Default configuration: engines, roles, review modes, loop caps, context settings
-agent-box.local.conf Machine-local overrides: AGENT_BOX_SLOTS, AGENT_BOX_ENGINE, AGENT_BOX_NS (not in git)
+boxie.conf       Default configuration: engines, roles, review modes, loop caps, context settings
+boxie.local.conf Machine-local overrides: BOXIE_SLOTS, BOXIE_ENGINE, BOXIE_NS (not in git)
 image/               Worker container definition: Dockerfile, run-task.sh, changed-tests.sh
 lib/                 Host-side Node.js orchestration logic: loop, ledger, verify, config, doctor
 projects/            Per-project configurations: <repo>.env (keys), <repo>.context.yaml, <repo>.Dockerfile
@@ -49,7 +49,7 @@ Toolchain:
 - Shell scripts strictly use POSIX / bash syntax (`ls`, `$HOME`, `&&`, `|`, single quotes). No PowerShell or cmd idioms.
 - Host-to-container network paths use `host.containers.internal` (Podman) or `host.docker.internal` (Docker).
 - Unit tests use Node's built-in test runner (`node:test`, `node:assert/strict`). No extra test frameworks.
-- Do not check in `projects/*.env`, `agent-box.local.conf`, or `runs/`.
+- Do not check in `projects/*.env`, `boxie.local.conf`, or `runs/`.
 - Tasks are grouped under `tasks/<project>-<phase>/` (e.g. `tasks/lykos-p3/`, `tasks/rakunloots-p9/`).
 - `.agents/skills/` is vendored. Never hand-edit it. Refresh with `RakunCodingKit/update.sh`.
 
@@ -74,4 +74,4 @@ Built with **RakunCodingKit** (1.1.0). `.agents/skills/` is vendored and tracked
 `CLAUDE.md` is a copy of this file (symlinks require elevated privileges on Windows). See `.agents/KIT.md`
 for the exact sources and commits.
 
-Delegation: `agent-box` skill, workers in Podman through OmniRoute, per-project `.env` holds the API key.
+Delegation: `boxie` skill, workers in Podman through OmniRoute, per-project `.env` holds the API key.

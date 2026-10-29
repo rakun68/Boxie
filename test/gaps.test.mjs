@@ -10,7 +10,7 @@ import { tmp as tempDir } from "./tmp.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = tempDir("ab-gaps-");
-process.env.AGENT_BOX_LEDGER = path.join(tmp, "events.jsonl");
+process.env.BOXIE_LEDGER = path.join(tmp, "events.jsonl");
 const { finalBlock, noOutput } = await import("../lib/ledger.mjs");
 const { verdictOf, nextOf, checks } = await import("../lib/checks.mjs");
 const { normalizeFinding, selectFindings } = await import("../lib/finding.mjs");
@@ -39,12 +39,12 @@ test("a review run gets no scope, stand-in or sensitive flags: REVIEW-EDIT cover
 });
 
 test("a report fenced as YAML is read; a fenced bare string is no block", () => {
-  const d = dirWith({ "final.md": "Done.\n\n```agent-box-report\nstatus: done\ntests: pass\ndecisions:\n  - kept the API\n```\n" });
-  assert.deepEqual(finalBlock(d, "agent-box-report"), { status: "done", tests: "pass", decisions: ["kept the API"] });
-  const y = dirWith({ "final.md": "```agent-box-findings\nfindings:\n  - issue: x\n    severity: high\n```\n" });
-  assert.deepEqual(finalBlock(y, "agent-box-findings"), [{ issue: "x", severity: "high" }]);
-  const s = dirWith({ "final.md": "```agent-box-report\njust words\n```\n" });
-  assert.equal(finalBlock(s, "agent-box-report"), null);
+  const d = dirWith({ "final.md": "Done.\n\n```boxie-report\nstatus: done\ntests: pass\ndecisions:\n  - kept the API\n```\n" });
+  assert.deepEqual(finalBlock(d, "boxie-report"), { status: "done", tests: "pass", decisions: ["kept the API"] });
+  const y = dirWith({ "final.md": "```boxie-findings\nfindings:\n  - issue: x\n    severity: high\n```\n" });
+  assert.deepEqual(finalBlock(y, "boxie-findings"), [{ issue: "x", severity: "high" }]);
+  const s = dirWith({ "final.md": "```boxie-report\njust words\n```\n" });
+  assert.equal(finalBlock(s, "boxie-report"), null);
 });
 
 test("a worker that exited 0 without one step is a provider error", () => {
@@ -93,7 +93,7 @@ test("setup: a Gradle multi-project build filters on the root project; mavenLoca
 });
 
 test("stats: an unknown option is an error, not a view", () => {
-  const r = spawnSync(process.execPath, [path.join(ROOT, "lib", "stats.mjs"), "--run", "x"], { encoding: "utf8", env: { ...process.env, AGENT_BOX_LEDGER: path.join(tmp, "none.jsonl") } });
+  const r = spawnSync(process.execPath, [path.join(ROOT, "lib", "stats.mjs"), "--run", "x"], { encoding: "utf8", env: { ...process.env, BOXIE_LEDGER: path.join(tmp, "none.jsonl") } });
   assert.equal(r.status, 2);
   assert.match(r.stderr, /unknown option --run/);
 });
@@ -122,7 +122,7 @@ function harness(script) {
     else if (cmd === "review") for (const [role, x] of Object.entries(step)) write(`${name}-${role}`, { role, ...x.summary }, x.findings);
     else if (cmd === "check") {
       fs.mkdirSync(path.join(runs, name), { recursive: true });
-      fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).map(([id, e]) => `AGENT-BOX-REPRO ${id} exit ${e}\n`).join(""));
+      fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).map(([id, e]) => `BOXIE-REPRO ${id} exit ${e}\n`).join(""));
     } else write(name, typeof step === "string" ? { verdict: step } : step);
   };
   const deps = { delegate, record: () => {}, readAll: () => [], baseSuite: async () => null };

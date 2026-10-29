@@ -1,4 +1,4 @@
-# Operating conditions (from the agent-box harness)
+# Operating conditions (from the Boxie harness)
 
 You are running inside a disposable Linux container. Make reasonable decisions yourself and record
 them in your final message. A decision you cannot make well without the orchestrator is a question:
@@ -29,7 +29,7 @@ them in your final message. A decision you cannot make well without the orchestr
   verify. A reviewer will check the diff and rerun the tests. End it with this block, filled in (the
   harness reads it and compares `tests` with its own test run):
 
-  ```agent-box-report
+  ```boxie-report
   {"status": "done|partial|blocked", "tests": "pass|fail|not_run", "test_summary": "<summary line exactly as printed>",
    "decisions": ["<choices the task left open, one line each>"],
    "context_gaps": ["<what the task or context pack should have told you but did not>"],

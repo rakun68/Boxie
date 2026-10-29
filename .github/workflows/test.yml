@@ -1,4 +1,4 @@
-# Unit tests on the three host platforms agent-box supports. No container engine and no models: the
+# Unit tests on the three host platforms boxie supports. No container engine and no models: the
 # tests stand in for delegate.sh's containers (test/loop.test.mjs) or run its host-side parts only.
 name: test
 on:

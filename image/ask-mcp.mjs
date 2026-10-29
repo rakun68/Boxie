@@ -86,7 +86,7 @@ async function handle(req) {
       return send({ id, result: {
         protocolVersion: params?.protocolVersion || "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "agent-box-orchestrator", version: "1.0.0" },
+        serverInfo: { name: "boxie-orchestrator", version: "1.0.0" },
       } });
     }
     if (method === "ping") return send({ id, result: {} });

@@ -48,7 +48,7 @@ test("the same ledger gives the same text, through the CLI too; nothing at all w
   const dir = tmp("ab-ex-");
   const file = path.join(dir, "events.jsonl");
   fs.writeFileSync(file, ledger().map((e) => JSON.stringify(e)).join("\n") + "\nnot json\n");
-  const run = (project) => execFileSync(process.execPath, [CLI, project], { encoding: "utf8", env: { ...process.env, AGENT_BOX_LEDGER: file } });
+  const run = (project) => execFileSync(process.execPath, [CLI, project], { encoding: "utf8", env: { ...process.env, BOXIE_LEDGER: file } });
   assert.equal(run("p"), examples(ledger(), "p"));
   assert.equal(run("p"), run("p"));
   assert.equal(run("nobody"), "");

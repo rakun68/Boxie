@@ -116,7 +116,7 @@ const cfg = {
 // review loop sets it, so a spec question is answered mid-review instead of stopping the loop). ASK=0
 // turns it off.
 if (env.ASK !== "0" && (!review || env.REVIEW_ASK === "1")) {
-  cfg.mcp = { orchestrator: { type: "local", command: ["node", "/opt/agent-box/ask-mcp.mjs"], enabled: true } };
+  cfg.mcp = { orchestrator: { type: "local", command: ["node", "/opt/boxie/ask-mcp.mjs"], enabled: true } };
 }
 
 const dir = path.join(os.homedir(), ".config", "opencode");

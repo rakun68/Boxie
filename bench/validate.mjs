@@ -6,7 +6,7 @@
 //   reference  reference.patch applied, hidden/ copied, check run   -> PASS; absent for blocked tasks
 //   cheat*     each cheat*.patch applied, hidden/ copied, check run -> FAIL (a known wrong answer is caught)
 // It also runs the task's visible `test:` before hidden/ goes in: it must pass on the reference, fail on
-// the base when the task seals a failing test (else agent-box would flag WEAK-SPEC), and pass on the base
+// the base when the task seals a failing test (else boxie would flag WEAK-SPEC), and pass on the base
 // of a blocked task. Every check must finish in under 10 s. Tasks with `validated: false` are skipped.
 // Prints a table; exits 1 on any mismatch.
 import fs from "node:fs";

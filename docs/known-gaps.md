@@ -1,7 +1,7 @@
 # Known gaps
 
 Found while driving Lykos P2's third band (T208–T218) through `loop` with
-`AGENT_BOX_SLOTS=3 AGENT_BOX_PARK=1`, 2026-10-19 to 2026-10-20. Each entry says what was seen, why,
+`BOXIE_SLOTS=3 BOXIE_PARK=1`, 2026-10-19 to 2026-10-20. Each entry says what was seen, why,
 and the workaround used. Lykos P3 (2026-10-22) added 5 to 8, and a startup-time survey added 9.
 All nine were fixed on 2026-10-23
 (**Fixed** lines); the RakunLoots P9 gaps are in docs/rakunloots-p9/rakunloots-phase9-2026-10-21.md.
@@ -189,7 +189,7 @@ lists.
 
 ### 11. The round cap's code default differs from its configured value
 
-**Seen.** `settings()` in `lib/loop.mjs:70` defaults `LOOP_MAX_ROUNDS` to 4. `agent-box.conf:59`
+**Seen.** `settings()` in `lib/loop.mjs:70` defaults `LOOP_MAX_ROUNDS` to 4. `boxie.conf:59`
 sets 5, and the skill and README say 5. With the shipped config the cap is 5; the code default only
 applies if the line is removed.
 
@@ -227,7 +227,7 @@ members' reports into `digest.md` under their names and say the merge failed.
 ### 15. The Podman VM dropped during a council launch
 
 **Seen.** 2026-10-28 18:54:35, first P18 council: the DeepSeek member's container lost Podman
-(`EOF`, then `connection forcibly closed`), the Gemini member then saw `no image agent-box:latest`
+(`EOF`, then `connection forcibly closed`), the Gemini member then saw `no image boxie:latest`
 (the image existed after a restart), and `podman machine list` showed the VM stopped. The daily
 auto-gc ran at the same launch. The maturity journal records a member dying 3 s after the auto-gc on
 2026-10-27. The rerun with `AUTO_GC=0` did not crash. Two occurrences, cause unproven.
@@ -256,14 +256,14 @@ report stayed in the run's transcript, not in the member file.
 **Workaround.** Check each member file's size; read the run's log for the report. Better: take the
 member's longest final assistant message, or reject an answer under a size floor and retry once.
 
-### 18. Repo-reading members cannot read agent-box itself
+### 18. Repo-reading members cannot read Boxie itself
 
-**Seen.** Same council: Sol and DeepSeek both reported `C:/Workspace/Tools/agent-box/lib/*.mjs` and
+**Seen.** Same council: Sol and DeepSeek both reported `C:/Workspace/Tools/Boxie/lib/*.mjs` and
 `docs/known-gaps.md` absent; only the target repo is mounted. A plan that compares a project with
-agent-box cannot have its agent-box claims checked by the council.
+Boxie cannot have its Boxie claims checked by the council.
 
-**Workaround.** Paste the agent-box excerpts the claims rest on into a `--file`. Better: a
-`--with-box` option that mounts agent-box's `lib/` and `docs/` read-only into members.
+**Workaround.** Paste the Boxie excerpts the claims rest on into a `--file`. Better: a
+`--with-box` option that mounts Boxie's `lib/` and `docs/` read-only into members.
 
 ### 19. A prompt over 128 KB fails at launch with "Argument list too long"
 

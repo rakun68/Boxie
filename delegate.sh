@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agent-box: run an OpenCode worker on a git repo inside a disposable container (Podman by default).
+# boxie: run an OpenCode worker on a git repo inside a disposable container (Podman by default).
 # The repo goes in as a git bundle and comes back as a git bundle. The container never sees the
 # host .git, your home directory, or any credential except the project's OmniRoute key.
 set -Eeuo pipefail
@@ -8,22 +8,22 @@ BOX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # fanout, review, explore and batch start runs of this script. "$0" is whatever the caller typed: a
 # relative "delegate.sh" is not on PATH and fails with "command not found" (bench 2026-10-13).
 SELF=(bash "$BOX/delegate.sh")
-# Container engine: podman (default) or docker. Set AGENT_BOX_ENGINE in the environment or in agent-box.conf.
-# agent-box.local.conf (not in git) holds this machine's own overrides: slots, namespace, engine.
-[ -f "$BOX/agent-box.conf" ] && . "$BOX/agent-box.conf"
-[ -f "$BOX/agent-box.local.conf" ] && . "$BOX/agent-box.local.conf"
-ENGINE="${AGENT_BOX_ENGINE:-podman}"
-case "$ENGINE" in docker|podman) ;; *) echo "agent-box: unknown engine $ENGINE" >&2; exit 1 ;; esac
-# Namespace: a second checkout (a worktree, a test install) sets AGENT_BOX_NS so its images, containers,
+# Container engine: podman (default) or docker. Set BOXIE_ENGINE in the environment or in boxie.conf.
+# boxie.local.conf (not in git) holds this machine's own overrides: slots, namespace, engine.
+[ -f "$BOX/boxie.conf" ] && . "$BOX/boxie.conf"
+[ -f "$BOX/boxie.local.conf" ] && . "$BOX/boxie.local.conf"
+ENGINE="${BOXIE_ENGINE:-podman}"
+case "$ENGINE" in docker|podman) ;; *) echo "boxie: unknown engine $ENGINE" >&2; exit 1 ;; esac
+# Namespace: a second checkout (a worktree, a test install) sets BOXIE_NS so its images, containers,
 # cache volumes and herdr workspace never collide with the first one's. Empty: the plain names.
-NS="agent-box${AGENT_BOX_NS:+-$AGENT_BOX_NS}"
+NS="boxie${BOXIE_NS:+-$BOXIE_NS}"
 BASE_IMAGE="$NS:latest"
 IMAGE="$BASE_IMAGE"
-LABEL="agent-box=1"
-NS_LABEL="agent-box.ns=${AGENT_BOX_NS:-default}"
-export AGENT_BOX_NS
+LABEL="boxie=1"
+NS_LABEL="boxie.ns=${BOXIE_NS:-default}"
+export BOXIE_NS
 
-die() { echo "agent-box: $*" >&2; exit 1; }
+die() { echo "boxie: $*" >&2; exit 1; }
 # The engine gets container paths verbatim; Git Bash would otherwise rewrite /in/... into C:/...
 dk() { MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL="*" "$ENGINE" "$@"; }
 cname_of() { echo "$NS-$PROJECT-${1//[^a-zA-Z0-9_.-]/-}"; }
@@ -44,7 +44,7 @@ usage() {
 Usage: delegate.sh <command> ...
 
   build    [<repo>]              Build the base worker image; with <repo>, also the project's own image
-                                 from projects/<repo>.Dockerfile (its toolchain, FROM agent-box:latest)
+                                 from projects/<repo>.Dockerfile (its toolchain, FROM boxie:latest)
   models   <repo>                List models the project's OmniRoute key can use
   baseline <repo>                Clone + setup + tests in the container, no agent
   run      <repo> <task.md> [--role R[@EFFORT] | --model M] [--effort LEVEL] [--review] [--name N] [--base REF]
@@ -53,7 +53,7 @@ Usage: delegate.sh <command> ...
                                  --effort none|low|medium|high|xhigh|max (or role@LEVEL; fanout, review,
                                  loop, explore, ask and council take it too): checked against OmniRoute,
                                  it may change the model id (deepseek-flash-max) or refuse (antigravity Claude).
-                                 --role picks the model from agent-box.conf. --review (or a read-only
+                                 --role picks the model from boxie.conf. --review (or a read-only
                                  role) discards every edit and skips tests; the output is the report.
   continue <repo> <run-name> (-m TEXT | -f FILE) [--name N] [--timeout MIN] [--steps N] [--at BRANCH (review runs)]
                             [--reseal COMMIT] [--seal GLOB ...]
@@ -64,7 +64,7 @@ Usage: delegate.sh <command> ...
                                  run's head) in the same session; --seal adds sealed globs
   watch    <repo> <run-name>     Live feed of a running worker: harness steps, tool calls, messages.
                                  With herdr running, every run opens one automatically in a tab of
-                                 the "agent-box" workspace (AGENT_BOX_HERDR=0 turns that off)
+                                 the "boxie" workspace (BOXIE_HERDR=0 turns that off)
   questions <repo> <run-name> [--wait]
                                  Open ask_orchestrator questions of a running worker. --wait blocks
                                  until one appears (exit 0) or the run ends (exit 1)
@@ -133,7 +133,7 @@ Usage: delegate.sh <command> ...
                                  reproduces it, locates it and commits a failing test, checked red
                                  by the harness. Prints JSON with fix_task: run it with --role implement
                                  --base agent/<hunt run>
-  roles    <repo>                The roles in effect for the project: agent-box.conf, overridden by
+  roles    <repo>                The roles in effect for the project: boxie.conf, overridden by
                                  any ROLE_*, REVIEW_MODE, REVIEW_ROLES, SCOUT_MODEL, LOOP_MAX_ROUNDS or
                                  TICKET_ESCALATE_* line in its projects/<repo>.env
   config   <repo>                The project's image, caches and every setting its .env sets
@@ -142,17 +142,17 @@ Usage: delegate.sh <command> ...
                                  First-time projects/<repo>.env, .Dockerfile and .context.yaml from the
                                  repo's manifests (Node, Go, Rust, CMake, Gradle, Maven, Python); never
                                  overwrites a file
-  install-skill [<dir>]          The Claude Code skill, with this clone's path, into ~/.claude/skills/agent-box
-  doctor   [<repo>]              Check everything agent-box needs (bash, node, engine, images, OmniRoute
+  install-skill [<dir>]          The Claude Code skill, with this clone's path, into ~/.claude/skills/boxie
+  doctor   [<repo>]              Check everything boxie needs (bash, node, engine, images, OmniRoute
                                  from the host and from inside a container), each failure with its fix
   gc       [--days N] [--volumes] [--yes]
                                  Disk: model lists and session archives older than N days (14) in runs/,
                                  agent/* branches and worktrees of runs older than N days, scratch and
                                  temp leftovers, untagged images, stopped containers. --volumes: also
                                  the per-slot cache volumes (reseeded on next use). Dry run unless --yes
-  bench    list|run ...          Frozen benchmark suites (bench/README.md); AGENT_BOX_REPOS points real-
+  bench    list|run ...          Frozen benchmark suites (bench/README.md); BOXIE_REPOS points real-
                                  history tasks at another checkout
-  clean                        Remove leftover agent-box containers (and parked ones)
+  clean                        Remove leftover boxie containers (and parked ones)
   unpark   <repo> <run>...|--all Remove parked containers of these runs (and <run>-*); the loop does it itself
   spec-check <repo> <task.md|dir> [--role R] [--name N] [--base REF]
                                  A dir: every .md in it checked together, for gaps between tickets too.
@@ -160,8 +160,8 @@ Usage: delegate.sh <command> ...
                                  undecided or where it contradicts its docs, before anyone implements it.
                                  `run` does it itself for a task with `issue:` (SPEC_CHECK=0 or --no-spec-check: off)
 
-Engine: podman (default) or docker, from AGENT_BOX_ENGINE or agent-box.conf. Build once per engine.
-Parallel: at most AGENT_BOX_SLOTS containers at once (default 4); each slot has its own CACHES volumes.
+Engine: podman (default) or docker, from BOXIE_ENGINE or boxie.conf. Build once per engine.
+Parallel: at most BOXIE_SLOTS containers at once (default 4); each slot has its own CACHES volumes.
 PROJECT_SLOTS=N in a project's .env caps that project's containers (checks and base suites included).
 An npm repo set up by the default `npm ci` keeps node_modules per slot (NODE_MODULES_CACHE=0: off).
 A run's launch runs `gc --yes` at most once a day (AUTO_GC=0: off). Host scratch lives in runs/.tmp.
@@ -188,7 +188,7 @@ load_project() {
   PROJECT="$(basename "$REPO" | tr '[:upper:]' '[:lower:]')"
   local env="$BOX/projects/$PROJECT.env"
   # Benchmark fixture repos share one settings file (projects/bench.env).
-  [ -f "$env" ] || [ -z "${AGENT_BOX_PROJECT_ENV:-}" ] || env="$AGENT_BOX_PROJECT_ENV"
+  [ -f "$env" ] || [ -z "${BOXIE_PROJECT_ENV:-}" ] || env="$BOXIE_PROJECT_ENV"
   [ -f "$env" ] || die "no project file $env (copy projects/example.env)"
   PROJECT_ENV="$env"
   # A project with its own Dockerfile runs in its own image; IMAGE in the .env file wins over both.
@@ -202,7 +202,7 @@ load_project() {
   export OMNIROUTE_BASE_URL TEST_CMD TIMEOUT_MIN
 }
 
-# Host scratch files live in runs/.tmp, never in the system temp folder: gc clears it (97 agent-box
+# Host scratch files live in runs/.tmp, never in the system temp folder: gc clears it (97 boxie
 # files had piled up in the system temp folder, 2026-10-24).
 scratch() { mkdir -p "$BOX/runs/.tmp" && mktemp "$BOX/runs/.tmp/$1.XXXXXX"; }
 
@@ -214,7 +214,7 @@ role_model() {
   local role="${1%%@*}" eff="${2:-}" var
   [[ "$1" == *@* ]] && [ -z "$eff" ] && eff="${1#*@}"
   var="ROLE_${role//-/_}"
-  [ -n "${!var:-}" ] || die "unknown role $role (define $var in agent-box.conf)"
+  [ -n "${!var:-}" ] || die "unknown role $role (define $var in boxie.conf)"
   read -r MODEL EFFORT <<<"${!var}"
   [ -z "$eff" ] || set_effort "$eff"
 }
@@ -234,28 +234,28 @@ cmd_build() {
   # The context is an empty folder holding only the Dockerfile: projects/ has the .env secrets.
   local ctx="$BOX/runs/.build-$PROJECT"
   rm -rf "$ctx"; mkdir -p "$ctx"
-  # FROM agent-box:latest in a project Dockerfile means this checkout's base image (its namespace).
-  sed -E "s#^FROM[[:space:]]+agent-box:latest#FROM $BASE_IMAGE#" "$df" >"$ctx/Dockerfile"
+  # FROM boxie:latest in a project Dockerfile means this checkout's base image (its namespace).
+  sed -E "s#^FROM[[:space:]]+boxie:latest#FROM $BASE_IMAGE#" "$df" >"$ctx/Dockerfile"
   dk build -t "$IMAGE" "$(winpath "$ctx")"; local e=$?
   dk image prune -f >/dev/null 2>&1 || true
   rm -rf "$ctx"; return $e
 }
 
 # -v flags for CACHES="name:/container/path ..." in the project's .env: named volumes kept across runs
-# (Go modules, cargo registry, Gradle). Each concurrency slot gets its own copy, agent-box-<name><slot>-cache:
+# (Go modules, cargo registry, Gradle). Each concurrency slot gets its own copy, boxie-<name><slot>-cache:
 # two containers on one Gradle cache deadlock on its journal lock ("Timeout waiting to lock journal
-# cache", RakunMiniItems 2026-10-15). A slot's volume missing is seeded once from agent-box-<name>-cache,
-# so it starts warm. AGENT_BOX_SLOT_CACHES=0: every run shares agent-box-<name>-cache, as before.
+# cache", RakunMiniItems 2026-10-15). A slot's volume missing is seeded once from boxie-<name>-cache,
+# so it starts warm. BOXIE_SLOT_CACHES=0: every run shares boxie-<name>-cache, as before.
 # The npm cache is always mounted and shared (npm's cache is safe to share).
 cache_volumes() {
   local c vol base n="${SLOT##*/}"
-  CACHE_ARGS=(-v agent-box-npm-cache:/home/node/.npm -v "$NS-api-cache:/home/node/.cache/agent-box-api")
+  CACHE_ARGS=(-v boxie-npm-cache:/home/node/.npm -v "$NS-api-cache:/home/node/.cache/boxie-api")
   for c in ${CACHES:-}; do
     [[ "$c" == ?*:/?* ]] || die "CACHES entry '$c' is not name:/path"
-    base="agent-box-${c%%:*}-cache"; vol="$NS-${c%%:*}-cache"
+    base="boxie-${c%%:*}-cache"; vol="$NS-${c%%:*}-cache"
     # Another namespace seeds its own volumes from the shared one and never writes to it.
     [ "$vol" = "$base" ] || seed_volume "$base" "$vol"
-    if [ -n "$n" ] && [ "${AGENT_BOX_SLOT_CACHES:-1}" != 0 ]; then base="$vol"; vol="$NS-${c%%:*}$n-cache"; seed_volume "$base" "$vol"; fi
+    if [ -n "$n" ] && [ "${BOXIE_SLOT_CACHES:-1}" != 0 ]; then base="$vol"; vol="$NS-${c%%:*}$n-cache"; seed_volume "$base" "$vol"; fi
     CACHE_ARGS+=(-v "$vol:${c#*:}")
   done
 }
@@ -265,10 +265,10 @@ seed_volume() {
   dk volume inspect "$2" >/dev/null 2>&1 && return 0
   dk volume create "$2" >/dev/null || die "could not create volume $2"
   dk volume inspect "$1" >/dev/null 2>&1 || return 0
-  echo "agent-box: seeding cache volume $2 from $1 (once per slot)" >&2
+  echo "boxie: seeding cache volume $2 from $1 (once per slot)" >&2
   dk run --rm --entrypoint sh -v "$1:/from:ro" -v "$2:/to" "$IMAGE" \
     -c 'cp -a /from/. /to/ && rm -rf /to/daemon /to/caches/journal-1/*.lock' >/dev/null 2>&1 \
-    || echo "agent-box: could not seed $2; it starts empty" >&2
+    || echo "boxie: could not seed $2; it starts empty" >&2
 }
 
 cmd_models() {
@@ -295,15 +295,15 @@ cmd_unpark() {
     for p in "$@"; do [ "$p" = --all ] || [ "$n" = "$p" ] || [[ "$n" == "$p"-* ]] && hit=1; done
     [ "$hit" = 1 ] || continue
     read -r c _ <"$f"; dk rm -f "$c" >/dev/null 2>&1 || true; rm -f "$f"
-    echo "agent-box: unparked $n"
+    echo "boxie: unparked $n"
   done
 }
 
-# A finished run in a few lines (lib/brief.mjs). --full, or AGENT_BOX_FULL=1: the whole report, with the
+# A finished run in a few lines (lib/brief.mjs). --full, or BOXIE_FULL=1: the whole report, with the
 # final agent message and token totals from OpenCode's JSON event stream.
 report() {
   local dir="$1"
-  if [ "${2:-}" != --full ] && [ "${AGENT_BOX_FULL:-0}" != 1 ]; then
+  if [ "${2:-}" != --full ] && [ "${BOXIE_FULL:-0}" != 1 ]; then
     (cd "$BOX" && node lib/brief.mjs "$(winpath "$dir")"); return 0
   fi
   [ -f "$dir/verdict.txt" ] && { echo "== verdict"; cat "$dir/verdict.txt"; }
@@ -347,7 +347,7 @@ auto_gc() {
   local stamp="$BOX/runs/.gc-last"
   [ -n "$(find "$stamp" -mmin -1440 2>/dev/null)" ] && return 0
   mkdir -p "$BOX/runs"; touch "$stamp"
-  echo "agent-box: daily cleanup in the background (runs/, branches, scratch, images, stopped containers; AUTO_GC=0 turns it off): runs/.gc.log" >&2
+  echo "boxie: daily cleanup in the background (runs/, branches, scratch, images, stopped containers; AUTO_GC=0 turns it off): runs/.gc.log" >&2
   (cmd_gc --yes >"$BOX/runs/.gc.log" 2>&1 &)
 }
 
@@ -378,7 +378,7 @@ launch() {
   # set -e ends a launch on any failing command without a word: a council member died 3 s after the
   # daily gc started, with nothing in its log (2026-10-27): slot_acquire, below. Name the line instead.
   # Not in subshells: a failing command there is handled by its caller (compgen with no match).
-  trap '[ "$BASH_SUBSHELL" != 0 ] || echo "agent-box: launch stopped at delegate.sh:$LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
+  trap '[ "$BASH_SUBSHELL" != 0 ] || echo "boxie: launch stopped at delegate.sh:$LINENO: $BASH_COMMAND (exit $?)" >&2' ERR
   local run_dir="$BOX/runs/$PROJECT/$name" branch="agent/$name"
   [ -e "$run_dir" ] && die "run $name already exists"
   git -C "$REPO" show-ref --verify --quiet "refs/heads/$branch" && die "branch $branch already exists in $REPO"
@@ -396,13 +396,13 @@ launch() {
   local base_sha; base_sha="$(git -C "$REPO" rev-parse --verify "$base^{commit}")" || die "bad base $base"
   # A continued round starts on its previous head but keeps the first round's base (ORIG_BASE).
   local start_sha="$base_sha"; [ -n "${ORIG_BASE:-}" ] && base_sha="$ORIG_BASE"
-  [ -n "$(git -C "$REPO" status --porcelain)" ] && echo "agent-box: note: uncommitted changes in $REPO are NOT sent; base is $base_sha" >&2
+  [ -n "$(git -C "$REPO" status --porcelain)" ] && echo "boxie: note: uncommitted changes in $REPO are NOT sent; base is $base_sha" >&2
   local bundle_ref="$base" tmp_ref=""
   if [ "$base" != "HEAD" ] && ! git -C "$REPO" show-ref --quiet "$base"; then
     # A bare commit (a sha, HEAD~2): bundled through a temporary branch (a clone of a bundle takes refs/heads only). Bundling HEAD instead lost a base
     # that HEAD does not contain ("reference is not a tree", Lykos peak-wrap, 2026-10-17).
     if git -C "$REPO" merge-base --is-ancestor "$start_sha" HEAD 2>/dev/null; then bundle_ref="HEAD"
-    else tmp_ref="refs/heads/agent-box-tmp/base-$name"; git -C "$REPO" update-ref "$tmp_ref" "$start_sha"; bundle_ref="$tmp_ref"; fi
+    else tmp_ref="refs/heads/boxie-tmp/base-$name"; git -C "$REPO" update-ref "$tmp_ref" "$start_sha"; bundle_ref="$tmp_ref"; fi
   fi
   git -C "$REPO" bundle create -q "$(winpath "$run_dir/in.bundle")" "$bundle_ref" 2>/dev/null \
     || git -C "$REPO" bundle create -q "$(winpath "$run_dir/in.bundle")" --all
@@ -424,7 +424,7 @@ launch() {
     SEALED="$(node -e 'console.log(JSON.parse(process.argv[1]).sealed.join("\n"))' "$meta")"
     local pack_test; pack_test="$(node -e 'console.log(JSON.parse(process.argv[1]).test)' "$meta")"
     if [ -z "${TEST_FROM_FLAG:-}" ] && [ -n "$pack_test" ]; then TEST_CMD="$pack_test"; fi
-    node -e 'for (const w of JSON.parse(process.argv[1]).warnings) console.error("agent-box: pack: " + w)' "$meta"
+    node -e 'for (const w of JSON.parse(process.argv[1]).warnings) console.error("boxie: pack: " + w)' "$meta"
     SKILLS_ALLOW="$(node -e 'console.log(JSON.parse(process.argv[1]).skills.join(","))' "$meta")"
     # Red check (sealed tests must fail on the base) and the step budget, from the task frontmatter.
     [ "${NO_RED:-0}" = 1 ] || RED_CMD="$(node -e 'console.log(JSON.parse(process.argv[1]).red || "")' "$meta")"
@@ -455,7 +455,7 @@ launch() {
   local want_slot=""
   [ -n "${CONTINUE_SESSION:-}" ] && [ -f "$CONTINUE_FROM/parked" ] && read -r _ _ want_slot <"$CONTINUE_FROM/parked"
   slot_acquire "$name" "$want_slot"
-  # Parking (AGENT_BOX_PARK=1, set by the review loop): a finished worker's container stays up, marked
+  # Parking (BOXIE_PARK=1, set by the review loop): a finished worker's container stays up, marked
   # by <run>/parked, so `continue` on its session runs the next round in it: no new container, clone,
   # setup or session restore (40-90 s a round on RakunMiniItems). A parked container holds no slot;
   # `unpark` or `clean` removes it, and a continue that cannot use it starts fresh as before. It mounts
@@ -465,7 +465,7 @@ launch() {
   local reuse=0 pc pimg
   if [ -n "${CONTINUE_SESSION:-}" ] && [ -f "$CONTINUE_FROM/parked" ]; then
     read -r pc pimg _ <"$CONTINUE_FROM/parked"; rm -f "$CONTINUE_FROM/parked"
-    [ "$SLOT_PREFERRED" = 1 ] || echo "agent-box: slot $want_slot is busy: $name starts a fresh container in ${SLOT##*/} (session restored from ${CONTINUE_FROM##*/})" >&2
+    [ "$SLOT_PREFERRED" = 1 ] || echo "boxie: slot $want_slot is busy: $name starts a fresh container in ${SLOT##*/} (session restored from ${CONTINUE_FROM##*/})" >&2
     if [ "$SLOT_PREFERRED" = 1 ] && [ "$pimg" = "$IMAGE" ] && [ "$(dk inspect -f '{{.State.Running}}' "$pc" 2>/dev/null)" = true ] \
        && dk rename "$pc" "$cname" >/dev/null 2>&1 \
        && dk exec "$cname" sh -c 'rm -rf /out/* /out/.[!.]* /in/* 2>/dev/null; mkdir -p /in/answers'; then
@@ -481,16 +481,16 @@ launch() {
      && git -C "$REPO" cat-file -e "$start_sha:package-lock.json" 2>/dev/null; then
     CACHE_ARGS+=(-v "$NS-$PROJECT-nm${SLOT##*/}-cache:/work/repo/node_modules")
   fi
-  # The real OpenCode TUI attaches to the worker when herdr shows the run (AGENT_BOX_TUI=0: feed only).
+  # The real OpenCode TUI attaches to the worker when herdr shows the run (BOXIE_TUI=0: feed only).
   TUI=0
-  if [ "$skip_agent" != 1 ] && [ "${AGENT_BOX_TUI:-1}" != 0 ] && herdr_ok; then TUI=1; fi
+  if [ "$skip_agent" != 1 ] && [ "${BOXIE_TUI:-1}" != 0 ] && herdr_ok; then TUI=1; fi
   export TUI ROLE="${ROLE:-}" AUTOFIX="${AUTOFIX:-1}" HIDDEN="${HIDDEN_DIR:+1}" PREAMBLE="${PREAMBLE:-}"
   # Context management (image/make-config.mjs) and the self-check turn (run-task.sh), from the conf files.
   export COMPACT_AT="${COMPACT_AT:-}" COMPACT_KEEP="${COMPACT_KEEP:-}" SELF_CHECK="${SELF_CHECK:-}"
   # The paid model a free opencode/* model hands over to at its limit (image/run-task.sh).
   export FREE_FALLBACK="${FREE_FALLBACK:-}"
   local host_ip; host_ip="$(host_address)"
-  local net_args=(); [ -n "${AGENT_BOX_NETWORK:-}" ] && net_args=(--network "$AGENT_BOX_NETWORK")
+  local net_args=(); [ -n "${BOXIE_NETWORK:-}" ] && net_args=(--network "$BOXIE_NETWORK")
   export BRANCH="$branch" BASE_SHA="$base_sha" START_SHA="$start_sha" SKIP_AGENT="$skip_agent"
   # The run's settings. A new container takes them by name; a reused one keeps its creation-time env,
   # so the round's values go to `exec` explicitly (the OmniRoute key is already in it, never on a command line).
@@ -503,7 +503,7 @@ launch() {
   if [ "$reuse" = 1 ]; then
     for v in $(compgen -v SYNTAX_) ${CONTAINER_ENV:-}; do execenv+=(-e "$v=${!v:-}"); done
   else
-    dk run -d --init --name "$cname" --label "$LABEL" --label "$NS_LABEL" --label "agent-box.project=$PROJECT" \
+    dk run -d --init --name "$cname" --label "$LABEL" --label "$NS_LABEL" --label "boxie.project=$PROJECT" \
       --cap-drop ALL --security-opt no-new-privileges --pids-limit 4096 --memory "${MEMORY:-8g}" \
       --add-host "host.docker.internal:$host_ip" "${net_args[@]}" \
       "${CACHE_ARGS[@]}" "${extra_env[@]}" -e OMNIROUTE_API_KEY -e OMNIROUTE_BASE_URL "${runenv[@]}" \
@@ -525,23 +525,23 @@ launch() {
   rm -rf "$stage"
 
   [ "$skip_agent" = 1 ] || herdr_open "$name"
-  echo "agent-box: $name started ($ENGINE container $cname$([ "$reuse" = 1 ] && echo ", reused from ${CONTINUE_FROM##*/}"), base ${base_sha:0:10}, model ${MODEL:-none})" >&2
-  if [ "$reuse" = 1 ]; then dk exec "${execenv[@]}" "$cname" /usr/local/bin/run-task.sh || echo "agent-box: run-task exited $?" >&2
-  else dk exec "$cname" /usr/local/bin/run-task.sh || echo "agent-box: run-task exited $?" >&2; fi
-  dk cp "$cname:/out/." "$(winpath "$run_dir")" || echo "agent-box: could not copy /out" >&2
+  echo "boxie: $name started ($ENGINE container $cname$([ "$reuse" = 1 ] && echo ", reused from ${CONTINUE_FROM##*/}"), base ${base_sha:0:10}, model ${MODEL:-none})" >&2
+  if [ "$reuse" = 1 ]; then dk exec "${execenv[@]}" "$cname" /usr/local/bin/run-task.sh || echo "boxie: run-task exited $?" >&2
+  else dk exec "$cname" /usr/local/bin/run-task.sh || echo "boxie: run-task exited $?" >&2; fi
+  dk cp "$cname:/out/." "$(winpath "$run_dir")" || echo "boxie: could not copy /out" >&2
   rm -f "$run_dir/in.bundle"
-  if [ "${AGENT_BOX_PARK:-0}" = 1 ] && [ "$skip_agent" != 1 ] && [ -f "$run_dir/summary.json" ] && [ -n "$(jq -r '.session // empty' "$run_dir/summary.json" 2>/dev/null)" ]; then
+  if [ "${BOXIE_PARK:-0}" = 1 ] && [ "$skip_agent" != 1 ] && [ -f "$run_dir/summary.json" ] && [ -n "$(jq -r '.session // empty' "$run_dir/summary.json" 2>/dev/null)" ]; then
     # Build daemons hold the cache volume's locks while idle: a parked Gradle daemon made the next run on
     # the slot fail with "Timeout waiting to lock journal cache" (RakunMiniItems #50 check, 2026-10-17).
     # Bracketed patterns: a plain one matches this sh -c's own command line and kills it first.
     dk exec "$cname" sh -c 'pkill -f "[G]radleDaemon"; pkill -f "[K]otlinCompileDaemon"; true' >/dev/null 2>&1 || true
     printf '%s %s %s\n' "$cname" "$IMAGE" "${SLOT##*/}" >"$run_dir/parked"
-    echo "agent-box: $name parked (container $cname kept for the next round; delegate.sh unpark)" >&2
+    echo "boxie: $name parked (container $cname kept for the next round; delegate.sh unpark)" >&2
   fi
 
   if [ -f "$run_dir/result.bundle" ]; then
     git -C "$REPO" fetch -q "$(winpath "$run_dir/result.bundle")" "refs/heads/$branch:refs/heads/$branch" \
-      && echo "agent-box: fetched into $REPO as branch $branch" >&2 \
+      && echo "boxie: fetched into $REPO as branch $branch" >&2 \
       && node "$(winpath "$BOX/lib/own.mjs")" "$(winpath "$REPO")" "$base_sha" "$branch" "$(winpath "$run_dir")"
   fi
   slot_release
@@ -564,15 +564,15 @@ launch() {
   report "$run_dir"
 }
 
-# The address containers reach the host (OmniRoute) at, as host.docker.internal. AGENT_BOX_HOST_IP wins.
+# The address containers reach the host (OmniRoute) at, as host.docker.internal. BOXIE_HOST_IP wins.
 # Docker (Desktop, and Engine 20.10+) resolves host-gateway itself; Desktop forwards it to the host's
 # loopback. Podman with a machine (Windows, macOS) needs the address the VM resolves for the host
 # (gvproxy's .254): the gateway Podman would inject reaches the WSL interface, not loopback. Podman on
 # Linux has no machine: host-gateway (Podman 4.7+). On Linux the host service must listen where the
-# container can reach it (not only 127.0.0.1), or set AGENT_BOX_NETWORK=host and OMNIROUTE_BASE_URL
+# container can reach it (not only 127.0.0.1), or set BOXIE_NETWORK=host and OMNIROUTE_BASE_URL
 # to http://localhost:<port>/v1. `delegate.sh doctor` checks the route from inside a container.
 host_address() {
-  if [ -n "${AGENT_BOX_HOST_IP:-}" ]; then echo "$AGENT_BOX_HOST_IP"; return; fi
+  if [ -n "${BOXIE_HOST_IP:-}" ]; then echo "$BOXIE_HOST_IP"; return; fi
   if [ "$ENGINE" = podman ] && [ "$(uname -s)" != Linux ]; then
     local ip cache="$BOX/runs/.host-ip"
     # The VM's view changes only when the machine restarts: reuse it for 10 minutes (1-2 s an ssh).
@@ -586,18 +586,18 @@ host_address() {
   echo host-gateway
 }
 
-# Concurrency slots: at most AGENT_BOX_SLOTS containers at once (default 4), whatever starts them
+# Concurrency slots: at most BOXIE_SLOTS containers at once (default 4), whatever starts them
 # (fanout, bench, ticket mode, several orchestrators). A slot whose owner process died is reclaimed.
 # PROJECT_SLOTS (projects/<repo>.env): at most that many of them for this project, checks included, so
 # PROJECT_SLOTS=1 runs one project serially while others use the rest (RakunLoots P9, 2026-10-21:
-# AGENT_BOX_SLOTS=1 meant "slot 1 only", busy with another project, while slot 4 was free).
+# BOXIE_SLOTS=1 meant "slot 1 only", busy with another project, while slot 4 was free).
 SLOT=""
 # slot_acquire <name> [slot]: with a slot number, that one is preferred (a parked container's next round
 # keeps its cache volumes); SLOT_PREFERRED=1 when it got it. Another free slot is taken after
 # SLOT_PREFER_WAIT seconds (default 0): Lykos 2026-10-19 and RakunLoots 2026-10-22 resumes waited an
 # hour for their old slot while others were free.
 slot_acquire() {
-  local d="$BOX/runs/.slots" i pid pr n="${AGENT_BOX_SLOTS:-4}" waited=0 want="${2:-}" cap="${PROJECT_SLOTS:-0}" t0 mine=0 holders
+  local d="$BOX/runs/.slots" i pid pr n="${BOXIE_SLOTS:-4}" waited=0 want="${2:-}" cap="${PROJECT_SLOTS:-0}" t0 mine=0 holders
   mkdir -p "$d"; t0=$(date +%s); SLOT_PREFERRED=0
   [[ "$want" =~ ^[0-9]+$ ]] && [ "$want" -le "$n" ] || want=""
   [[ "$cap" =~ ^[0-9]+$ ]] || cap=0
@@ -633,9 +633,9 @@ slot_acquire() {
       # the launch, exit without a word (a council member and a spec check under PROJECT_SLOTS=1, 2026-10-27).
       holders="$(for i in $(seq 1 "$n"); do read -r _ nm pr 2>/dev/null <"$d/$i/owner" && echo "$i:$nm${pr:+ ($pr)}" || true; done | paste -sd, -)"
       if [ "$cap" -gt 0 ] && [ "$mine" -ge "$cap" ]; then
-        echo "agent-box: $1 waits: $PROJECT already has $mine of PROJECT_SLOTS=$cap (slots: ${holders:-none})" >&2
+        echo "boxie: $1 waits: $PROJECT already has $mine of PROJECT_SLOTS=$cap (slots: ${holders:-none})" >&2
       else
-        echo "agent-box: $1 waits for a free slot of $n (AGENT_BOX_SLOTS; held: ${holders:-none})" >&2
+        echo "boxie: $1 waits for a free slot of $n (BOXIE_SLOTS; held: ${holders:-none})" >&2
       fi
     fi
     waited=1; sleep 3
@@ -798,8 +798,8 @@ cmd_continue() {
     [ -z "$at" ] || die "--reseal and --at do not go together"
     local rs; rs="$(git -C "$REPO" rev-parse --verify --quiet "$reseal^{commit}")" || die "no such commit $reseal"
     git -C "$REPO" merge-base --is-ancestor "$head" "$rs" || die "$reseal does not contain $from's head ${head:0:10}: commit the correction on top of agent/$from"
-    echo "agent-box: resealed: the next round of $from starts on ${rs:0:10}; sealed files are checked against it" >&2
-    start="refs/heads/agent-box-tmp/start-$from"
+    echo "boxie: resealed: the next round of $from starts on ${rs:0:10}; sealed files are checked against it" >&2
+    start="refs/heads/boxie-tmp/start-$from"
     git -C "$REPO" update-ref "$start" "$rs"
   elif [ -n "$at" ]; then
     [ "${REVIEW:-0}" = 1 ] || die "--at is for review runs: a worker continues on its own branch"
@@ -807,7 +807,7 @@ cmd_continue() {
     start="refs/heads/$at"; export REVIEW_TARGET="$at"
   elif ! git -C "$REPO" show-ref --verify --quiet "refs/heads/$start"; then
     [ "$commits" = 0 ] || die "branch $start is gone from $REPO; fetch it again from $prev/result.bundle"
-    start="refs/heads/agent-box-tmp/start-$from"
+    start="refs/heads/boxie-tmp/start-$from"
     git -C "$REPO" update-ref "$start" "$head" || die "commit $head is not in $REPO"
   fi
   ROUND=$(( RUN_ROUND + 1 ))
@@ -820,7 +820,7 @@ cmd_continue() {
   export MODEL EFFORT VARIANT ALLOW_WEB REVIEW SCOUT_MODEL TEST_CMD SEALED SKILLS_ALLOW TIMEOUT_MIN ROUND ASK ROLE STEPS AUTOFIX
   CONTINUE_SESSION="$session" CONTINUE_FROM="$prev" ORIG_BASE="$RUN_BASE_SHA" LEDGER_PARENT="$from" \
     launch "$name" "$msg_file" "$start" 0
-  case "$start" in refs/heads/agent-box-tmp/*) git -C "$REPO" update-ref -d "$start" ;; esac
+  case "$start" in refs/heads/boxie-tmp/*) git -C "$REPO" update-ref -d "$start" ;; esac
 }
 
 # Live feed of a run: harness steps, every tool call, the worker's messages. In a herdr pane it also
@@ -852,7 +852,7 @@ cmd_watch() {
   [ -f "$dir/diffstat.txt" ] && tail -n 1 "$dir/diffstat.txt"
   if [ "${HERDR_ENV:-}" = 1 ] && [ -n "${HERDR_PANE_ID:-}" ]; then
     local short="${model##*/}"; short="${short%-tiered}"
-    "$HERDR_BIN_PATH" pane report-agent "$HERDR_PANE_ID" --source agent-box --agent "$name${short:+ ($short)}" --state idle \
+    "$HERDR_BIN_PATH" pane report-agent "$HERDR_PANE_ID" --source boxie --agent "$name${short:+ ($short)}" --state idle \
       --message "done: $verdict" --seq "$(( $(date +%s) * 1000 ))" >/dev/null 2>&1 || true
     herdr_close_tab
   fi
@@ -896,15 +896,15 @@ cmd_loop_tab() {
   tabjson="$(herdr tab create --workspace "$ws" --label "$name" --cwd "$(winpath "$BOX")" 2>/dev/null)" || return 0
   pane="$(jq -r '.result.root_pane.pane_id' <<<"$tabjson")"
   [ -n "$pane" ] && [ "$pane" != null ] || return 0
-  printf '#!/usr/bin/env bash\nexport AB_HERDR_TAB=%q AB_TAB_LINGER=%q AGENT_BOX_PROJECT_ENV=%q\nexec %q loop-watch %q %q\n' \
-    "$(jq -r '.result.tab.tab_id' <<<"$tabjson")" "${AB_TAB_LINGER:-}" "${AGENT_BOX_PROJECT_ENV:-}" "$BOX/delegate.sh" "$REPO" "$name" >"$dir/watch.sh"
+  printf '#!/usr/bin/env bash\nexport AB_HERDR_TAB=%q AB_TAB_LINGER=%q BOXIE_PROJECT_ENV=%q\nexec %q loop-watch %q %q\n' \
+    "$(jq -r '.result.tab.tab_id' <<<"$tabjson")" "${AB_TAB_LINGER:-}" "${BOXIE_PROJECT_ENV:-}" "$BOX/delegate.sh" "$REPO" "$name" >"$dir/watch.sh"
   herdr_launch "$pane" "$dir/watch.sh"
 }
 
-# herdr: one tab per run in an "agent-box" workspace, running `watch`. Silently does nothing when
-# herdr is not installed or not running, or AGENT_BOX_HERDR=0.
+# herdr: one tab per run in an "boxie" workspace, running `watch`. Silently does nothing when
+# herdr is not installed or not running, or BOXIE_HERDR=0.
 herdr_ok() {
-  [ "${AGENT_BOX_HERDR:-auto}" != 0 ] && command -v herdr >/dev/null \
+  [ "${BOXIE_HERDR:-auto}" != 0 ] && command -v herdr >/dev/null \
     && herdr status server 2>/dev/null | grep -q 'status: running'
 }
 herdr_ws() {
@@ -913,7 +913,7 @@ herdr_ws() {
   [ -n "$ws" ] || ws="$(herdr workspace create --label "$NS" --cwd "$(winpath "$BOX")" --no-focus 2>/dev/null | jq -r '.result.workspace.workspace_id')"
   echo "$ws"
 }
-# Each run's tab: the real OpenCode TUI attached to the worker on the left (TUI=1), the agent-box feed
+# Each run's tab: the real OpenCode TUI attached to the worker on the left (TUI=1), the boxie feed
 # (harness steps, tool calls, verdict; reports state to herdr) on the right.
 herdr_open() {
   local name="$1" ws tabjson tab pane feed dir="$BOX/runs/$PROJECT/$1"
@@ -923,10 +923,10 @@ herdr_open() {
   tab="$(jq -r '.result.tab.tab_id' <<<"$tabjson")"; pane="$(jq -r '.result.root_pane.pane_id' <<<"$tabjson")"
   [ -n "$pane" ] && [ "$pane" != null ] || return 0
   # Script files, so no quoting has to survive the pane's shell (PowerShell on Windows).
-  printf '#!/usr/bin/env bash\nexport AB_HERDR_TAB=%q AB_TAB_LINGER=%q AGENT_BOX_PROJECT_ENV=%q\nexec %q watch %q %q\n' "$tab" "${AB_TAB_LINGER:-}" "${AGENT_BOX_PROJECT_ENV:-}" "$BOX/delegate.sh" "$REPO" "$name" >"$dir/watch.sh"
+  printf '#!/usr/bin/env bash\nexport AB_HERDR_TAB=%q AB_TAB_LINGER=%q BOXIE_PROJECT_ENV=%q\nexec %q watch %q %q\n' "$tab" "${AB_TAB_LINGER:-}" "${BOXIE_PROJECT_ENV:-}" "$BOX/delegate.sh" "$REPO" "$name" >"$dir/watch.sh"
   if [ "${TUI:-0}" = 1 ]; then
-    printf '#!/usr/bin/env bash\nexport AGENT_BOX_PROJECT_ENV=%q\nexec %q tui %q %q\n' "${AGENT_BOX_PROJECT_ENV:-}" "$BOX/delegate.sh" "$REPO" "$name" >"$dir/tui.sh"
-    feed="$(herdr pane split "$pane" --direction right --ratio "${AGENT_BOX_TUI_RATIO:-0.66}" --cwd "$(winpath "$BOX")" 2>/dev/null | jq -r '.result.pane.pane_id')"
+    printf '#!/usr/bin/env bash\nexport BOXIE_PROJECT_ENV=%q\nexec %q tui %q %q\n' "${BOXIE_PROJECT_ENV:-}" "$BOX/delegate.sh" "$REPO" "$name" >"$dir/tui.sh"
+    feed="$(herdr pane split "$pane" --direction right --ratio "${BOXIE_TUI_RATIO:-0.66}" --cwd "$(winpath "$BOX")" 2>/dev/null | jq -r '.result.pane.pane_id')"
     herdr_launch "$pane" "$dir/tui.sh"
     if [ -n "$feed" ] && [ "$feed" != null ]; then herdr_launch "$feed" "$dir/watch.sh"; fi
   else
@@ -1033,7 +1033,7 @@ cmd_wait() {
           # A loop asks through the runs of its current round (<loop>-fix*, <loop>-rv*): its live containers.
           local live=() r
           if [ -d "$runs/_loops/$n" ]; then
-            mapfile -t live < <(dk ps --filter "label=agent-box.project=$PROJECT" --format '{{.Names}}' 2>/dev/null | tr -d '\r' \
+            mapfile -t live < <(dk ps --filter "label=boxie.project=$PROJECT" --format '{{.Names}}' 2>/dev/null | tr -d '\r' \
               | sed -n "s/^$NS-$PROJECT-//p" | grep -F -- "$n-" | grep -E "^$n-" || true)
           elif [ -d "$runs/$n" ]; then live=("$n"); fi
           # A parked container is idle between rounds: its old, answered questions are not new ones
@@ -1068,7 +1068,7 @@ cmd_answer() {
   local c; c="$(cname_of "$name")"
   dk exec -i "$c" sh -c "cat > /in/answers/.$id.tmp && mv /in/answers/.$id.tmp /in/answers/$id.md" <"$msg_file" \
     || die "could not deliver the answer (is run $name still running?)"
-  echo "agent-box: answered question $id of $name"
+  echo "boxie: answered question $id of $name"
 }
 
 # One line per run: the evidence an orchestrator selects on. Agent claims are not in it.
@@ -1121,11 +1121,11 @@ cmd_fanout() {
 }
 
 # Read-only review of a branch by several reviewers in parallel. The review task is generated: the
-# changed files feed the context pack, and when the branch came from an agent-box run its original
+# changed files feed the context pack, and when the branch came from a boxie run its original
 # task is quoted so reviewers can check the change against what was asked.
 # Two axes, the same prompts as ticket mode: review-spec (does it do what the spec asks, edge cases,
 # tests) and review-std (the repo's standards); or, in review mode `both`, one review-both covering
-# both (lib/reviewmode.mjs). Every reviewer gets the spec: the branch's own task when agent-box made
+# both (lib/reviewmode.mjs). Every reviewer gets the spec: the branch's own task when boxie made
 # it, plus every --spec file.
 cmd_review() {
   local repo="$1" branch="$2"; shift 2
@@ -1159,7 +1159,7 @@ cmd_review() {
   local tdir="$BOX/runs/$PROJECT/.review-$stamp${prefix:+-$prefix}"; mkdir -p "$tdir"
   local body="$tdir/body.md" origin="$BOX/runs/$PROJECT/${branch#agent/}/task-body.md" f
   local pspec=(); [ -z "$paths" ] || mapfile -t pspec < <(tr ' ' '\n' <<<"$paths" | grep -v '^$')
-  [ -f "$origin" ] || [ ${#specs[@]} -gt 0 ] || echo "agent-box: warning: no spec: $branch was not made by agent-box and no --spec was given" >&2
+  [ -f "$origin" ] || [ ${#specs[@]} -gt 0 ] || echo "boxie: warning: no spec: $branch was not made by boxie and no --spec was given" >&2
   {
     echo
     echo "Review the change on this branch: \`git diff $base..HEAD\` ($(git -C "$REPO" rev-list --count "$base..$branch") commits)."
@@ -1191,7 +1191,7 @@ cmd_review() {
     echo "## Reminder: you are the reviewer"
     echo
     echo "Do not implement, fix or edit anything in the repository; the task above was the implementer's."
-    echo "Review the change against it and end with the \`agent-box-findings\` block (\`[]\` when nothing blocks)."
+    echo "Review the change against it and end with the \`boxie-findings\` block (\`[]\` when nothing blocks)."
   } >"$body"
   # The spec reviewer (and review-both) is never the implementer's family: it gets its -alt role.
   local impl="" r var alt
@@ -1203,13 +1203,13 @@ cmd_review() {
     if [ -n "$impl" ] && { [ "$b" = review-spec ] || [ "$b" = review-both ]; }; then
       var="ROLE_${b//-/_}"; alt="${var}_alt"
       if [ "$(node "$(winpath "$BOX/lib/family.mjs")" use-alt "$impl" "${!var%% *}" "${!alt:-}")" = alt ]; then
-        echo "agent-box: $impl wrote this branch and $b is the same family: that review goes to $b-alt (${!alt%% *})" >&2
+        echo "boxie: $impl wrote this branch and $b is the same family: that review goes to $b-alt (${!alt%% *})" >&2
         r="$b-alt${r#"$b"}"; b="$b-alt"
       fi
     fi
     # --effort: a model whose effort is fixed (antigravity Claude) keeps its own, with a warning.
     if [ -n "$effort" ] && [[ "$r" != *@* ]]; then
-      if (role_model "$b" "$effort") 2>/dev/null; then r="$r@$effort"; else echo "agent-box: $b keeps its own effort: $effort refused for its model" >&2; fi
+      if (role_model "$b" "$effort") 2>/dev/null; then r="$r@$effort"; else echo "boxie: $b keeps its own effort: $effort refused for its model" >&2; fi
     fi
     swapped="${swapped:+$swapped,}$r"
   done
@@ -1265,7 +1265,7 @@ cmd_refs() {
   node "$(winpath "$BOX/lib/ledger.mjs")" refs "$PROJECT" "$2"
 }
 
-# The roles in effect for one project. agent-box.conf is sourced first and the project file second, so
+# The roles in effect for one project. boxie.conf is sourced first and the project file second, so
 # a line there wins; "project" marks the settings it sets.
 cmd_roles() {
   load_project "$1"
@@ -1284,7 +1284,7 @@ cmd_setup() {
   if [ "${1:-}" = --init-git ] || [ "${2:-}" = --init-git ]; then
     [ -d "$repo" ] || die "not a folder: $repo"
     if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
-      git -C "$repo" init -q && git -C "$repo" add -A && git -C "$repo" commit -qm "Initial commit (agent-box setup --init-git)"         && echo "agent-box: $repo is a git repo now, one commit"
+      git -C "$repo" init -q && git -C "$repo" add -A && git -C "$repo" commit -qm "Initial commit (boxie setup --init-git)"         && echo "boxie: $repo is a git repo now, one commit"
     fi
     set -- $(for a in "$@"; do [ "$a" = --init-git ] || echo "$a"; done)
   fi
@@ -1296,7 +1296,7 @@ cmd_config() {
   load_project "$1"
   local k state=built
   dk image inspect "$IMAGE" >/dev/null 2>&1 || state="not built: delegate.sh build $REPO"
-  printf '%-22s %s\n' image "$IMAGE ($state)" caches "agent-box-npm-cache ${CACHES:-}"
+  printf '%-22s %s\n' image "$IMAGE ($state)" caches "boxie-npm-cache ${CACHES:-}"
   for k in $(grep -oE '^(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=' "$PROJECT_ENV" | sed -E 's/^export[[:space:]]+//; s/=$//' | sort -u); do
     if [ "$k" = OMNIROUTE_API_KEY ]; then printf '%-22s %s\n' "$k" "$([ -n "${!k:-}" ] && echo set || echo empty)"
     else printf '%-22s %s\n' "$k" "${!k-}"; fi
@@ -1364,15 +1364,15 @@ cmd_spec_check() {
   [ -f "$task" ] || die "task file not found: $task"
   [ -n "$name" ] || name="spec-$(date +%Y%m%d-%H%M%S)"
   local out="$BOX/runs/$PROJECT/$name" log="$BOX/runs/$PROJECT/.$name.log"
-  SPEC_CHECK=0 AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$task" --role "$role" --review --no-red --no-ask --steps 30 \
+  SPEC_CHECK=0 BOXIE_PARK=0 "${SELF[@]}" run "$repo" "$task" --role "$role" --review --no-red --no-ask --steps 30 \
     --preamble speccheck --mode speccheck --name "$name" --base "$base" >"$log" 2>&1 \
     || { tail -n 20 "$log"; die "spec check run failed"; }
   node -e '
     const fs = require("fs"), [dir] = process.argv.slice(1);
     let t = ""; try { t = fs.readFileSync(dir + "/final.md", "utf8"); } catch {}
-    const b = t.match(/```[^\n`]*?(?:\r?\n[ \t]*)?agent-box-spec-questions[^\n]*\n([\s\S]*?)\n\s*```/);
+    const b = t.match(/```[^\n`]*?(?:\r?\n[ \t]*)?boxie-spec-questions[^\n]*\n([\s\S]*?)\n\s*```/);
     let q = null; try { q = b ? JSON.parse(b[1]) : null; } catch {}
-    if (!Array.isArray(q)) { console.log("spec check: no readable agent-box-spec-questions block; see " + dir + "/final.md"); process.exit(5); }
+    if (!Array.isArray(q)) { console.log("spec check: no readable boxie-spec-questions block; see " + dir + "/final.md"); process.exit(5); }
     fs.writeFileSync(dir + "/spec-questions.json", JSON.stringify(q, null, 2));
     if (!q.length) { console.log("spec check: nothing to decide"); process.exit(0); }
     console.log(`spec check: ${q.length} point(s) to rule on before implementing`);
@@ -1453,7 +1453,7 @@ cmd_council() {
       local fa=(); for f in "${files[@]}"; do fa+=(--file "$f"); done
       "${SELF[@]}" ask "$repo" --role "$m" ${eff:+--effort "$eff"} --prompt "$dir/task.md" >"$dir/$b.md" 2>"$dir/$b.log" &
     else
-      ( AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red \
+      ( BOXIE_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red \
           --preamble explore --mode council --name "$name-$b" --steps "${COUNCIL_STEPS:-60}" >"$dir/$b.log" 2>&1
         cp "$BOX/runs/$PROJECT/$name-$b/final.md" "$dir/$b.md" 2>/dev/null || true ) &
     fi
@@ -1465,7 +1465,7 @@ cmd_council() {
     b="${m%%@*}"
     [[ " ${COUNCIL_ASK_ONLY-advise} " == *" $b "* ]] || [ -s "$dir/$b.md" ] || {
       echo "council: $b gave no answer; trying once more" >&2
-      AGENT_BOX_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red         --preamble explore --mode council --name "$name-$b-2" --steps "${COUNCIL_STEPS:-60}" >>"$dir/$b.log" 2>&1 || true
+      BOXIE_PARK=0 "${SELF[@]}" run "$repo" "$dir/task.md" --role "$m" ${eff:+--effort "$eff"} --review --no-ask --no-red         --preamble explore --mode council --name "$name-$b-2" --steps "${COUNCIL_STEPS:-60}" >>"$dir/$b.log" 2>&1 || true
       cp "$BOX/runs/$PROJECT/$name-$b-2/final.md" "$dir/$b.md" 2>/dev/null || true
     }
   done
@@ -1567,19 +1567,19 @@ case "${1:-}" in
     repo="$1"; shift; node "$(winpath "$BOX/lib/loop.mjs")" "${sub[@]}" "$(winpath "$(cd "$(repo_path "$repo")" && pwd)")" "$@" ;;
   stats) shift; node "$(winpath "$BOX/lib/stats.mjs")" "$@" ;;
   install-skill) shift
-    # The Claude Code skill with this clone's path written in (claude-skill/agent-box/SKILL.md).
-    dest="${1:-$HOME/.claude/skills/agent-box}"; mkdir -p "$dest"
-    sed "s#<agent-box>#$(cd "$BOX" && pwd -W 2>/dev/null || pwd)#g" "$BOX/claude-skill/agent-box/SKILL.md" >"$dest/SKILL.md"
-    echo "agent-box: skill installed at $dest/SKILL.md" ;;
+    # The Claude Code skill with this clone's path written in (claude-skill/boxie/SKILL.md).
+    dest="${1:-$HOME/.claude/skills/boxie}"; mkdir -p "$dest"
+    sed "s#<boxie>#$(cd "$BOX" && pwd -W 2>/dev/null || pwd)#g" "$BOX/claude-skill/boxie/SKILL.md" >"$dest/SKILL.md"
+    echo "boxie: skill installed at $dest/SKILL.md" ;;
   doctor) shift
     if [ -n "${1:-}" ]; then load_project "$1"; else OMNIROUTE_BASE_URL="${OMNIROUTE_BASE_URL:-http://host.docker.internal:20128/v1}"; fi
     AB_BASH="$BASH_VERSION" AB_ENGINE="$ENGINE" AB_IMAGE="$IMAGE" AB_BASE_IMAGE="$BASE_IMAGE" AB_BOX="$(winpath "$BOX")" \
-      AB_PROJECT_ENV="${PROJECT_ENV:-}" AB_REPO="${REPO:-}" AB_HOST_IP="$(host_address)" AB_NETWORK="${AGENT_BOX_NETWORK:-}" \
-      AB_SLOTS="${AGENT_BOX_SLOTS:-4}" AB_MEMORY="${MEMORY:-8g}" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
+      AB_PROJECT_ENV="${PROJECT_ENV:-}" AB_REPO="${REPO:-}" AB_HOST_IP="$(host_address)" AB_NETWORK="${BOXIE_NETWORK:-}" \
+      AB_SLOTS="${BOXIE_SLOTS:-4}" AB_MEMORY="${MEMORY:-8g}" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
       OMNIROUTE_HOST_URL="${OMNIROUTE_HOST_URL:-http://localhost:20128/v1}" OMNIROUTE_BASE_URL="$OMNIROUTE_BASE_URL" \
       node "$(winpath "$BOX/lib/doctor.mjs")" ;;
   gc) shift; cmd_gc "$@" ;;
-  bench) shift; AGENT_BOX_REPOS="${AGENT_BOX_REPOS:-}" node "$(winpath "$BOX/lib/bench.mjs")" "$@" ;;
+  bench) shift; BOXIE_REPOS="${BOXIE_REPOS:-}" node "$(winpath "$BOX/lib/bench.mjs")" "$@" ;;
   dash) shift; node "$(winpath "$BOX/lib/stats.mjs")" tui "$@" ;;
   clean) cmd_clean ;;
   unpark) shift; cmd_unpark "$@" ;;

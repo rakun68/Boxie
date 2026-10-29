@@ -160,8 +160,8 @@ function harness(script, { sealed = true } = {}) {
     else if (cmd === "check") {
       fs.mkdirSync(path.join(runs, name), { recursive: true });
       fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).map(([id, e]) => (id === "neighbours"
-        ? `AGENT-BOX-NEIGHBOURS exit ${e}\n    not ok 1 - trusted child\n${e ? "AGENT-BOX-NEIGHBOURS-BASE exit 0\n" : ""}`
-        : `AGENT-BOX-REPRO ${id} exit ${e}\n`)).join(""));
+        ? `BOXIE-NEIGHBOURS exit ${e}\n    not ok 1 - trusted child\n${e ? "BOXIE-NEIGHBOURS-BASE exit 0\n" : ""}`
+        : `BOXIE-REPRO ${id} exit ${e}\n`)).join(""));
     } else if (cmd === "ask") fs.writeFileSync(log, step);
     else {
       const s = typeof step === "string" ? { verdict: step } : step;
@@ -414,7 +414,7 @@ test("delegate.sh review --name and --prior: runs named by the prefix, each axis
   const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
   try {
     spawnSync("bash", ["delegate.sh", "review", dir, "agent/x", "--name", "L-rv2", "--prior", `spec=${prior}`],
-      { cwd: BOX, encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env, AGENT_BOX_HERDR: "0" } });
+      { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
     const tdir = fs.readdirSync(runs).find((f) => f.startsWith(".review-"));
     const spec = fs.readFileSync(path.join(runs, tdir, "task-review-spec.md"), "utf8");
     const std = fs.readFileSync(path.join(runs, tdir, "task-review-std.md"), "utf8");
@@ -464,11 +464,11 @@ test("loop: with the base suite known, a check runs its neighbours on the branch
     await inner(args, log);
     if (args[0] !== "check") return;
     const f = path.join(h.P.runs, args[args.indexOf("--name") + 1], "test.log");
-    const t = fs.readFileSync(f, "utf8").replace(/^AGENT-BOX-NEIGHBOURS-BASE.*\n/m, "");
-    fs.writeFileSync(f, /NEIGHBOURS exit 1/.test(t) ? `${t}AGENT-BOX-NFAIL trusted child\nAGENT-BOX-NFAIL linux path\n` : t);
+    const t = fs.readFileSync(f, "utf8").replace(/^BOXIE-NEIGHBOURS-BASE.*\n/m, "");
+    fs.writeFileSync(f, /NEIGHBOURS exit 1/.test(t) ? `${t}BOXIE-NFAIL trusted child\nBOXIE-NFAIL linux path\n` : t);
   };
   const st = await loop(h.P, "impl", { name: "L" }, h.deps);
-  assert.doesNotMatch(fs.readFileSync(path.join(h.P.runs, "_loops", "L", "check1", ".agent-box-verify", "run.sh"), "utf8"), /NEIGHBOURS-BASE/);
+  assert.doesNotMatch(fs.readFileSync(path.join(h.P.runs, "_loops", "L", "check1", ".boxie-verify", "run.sh"), "utf8"), /NEIGHBOURS-BASE/);
   const m = h.msg(h.calls[2]);
   assert.match(m, /## Regression[\s\S]*trusted child/);
   assert.match(m, /These already fail on the base; ignore them: `linux path`\./, "only the base failures this run hit");
@@ -518,7 +518,7 @@ test("loop: a reviewer's live question becomes a ruling for the fixer and the re
   assert.deepEqual(st.rulings, ["Asked by L-rv1-review-spec: Does the gate run in a container too? Answer: Yes, everywhere."]);
   assert.match(h.msg(h.calls[2]), /answers to questions asked this round \(binding\)[\s\S]*Yes, everywhere\./);
   assert.match(h.msg(h.calls[3]), /rulings, binding:[\s\S]*1\. Asked by L-rv1-review-spec: .*Yes, everywhere\./);
-  assert.ok(h.envs.every((e) => e.REVIEW_ASK === "1" && e.AGENT_BOX_PARK === "1"));
+  assert.ok(h.envs.every((e) => e.REVIEW_ASK === "1" && e.BOXIE_PARK === "1"));
   assert.deepEqual(h.unparked, [["L", "impl"]]);
   h.left();
 });
@@ -540,7 +540,7 @@ test("loop: LOOP_LIVE_ASK=0 and LOOP_PARK=0 run the loop as before", async () =>
   h.P.env = { LOOP_LIVE_ASK: "0", LOOP_PARK: "0" };
   const st = await loop(h.P, "impl", { name: "L" }, h.deps);
   assert.equal(st.next, "approve");
-  assert.deepEqual(h.envs, [{ REVIEW_ASK: "0", AGENT_BOX_PARK: "0" }]);
+  assert.deepEqual(h.envs, [{ REVIEW_ASK: "0", BOXIE_PARK: "0" }]);
   assert.deepEqual(h.unparked, []);
   h.left();
 });

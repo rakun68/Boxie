@@ -1,5 +1,5 @@
 {
-  "name": "agent-box",
+  "name": "boxie",
   "private": true,
   "type": "module",
   "description": "Host-side helpers for delegate.sh",

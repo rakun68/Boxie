@@ -12,24 +12,24 @@ import { strw } from "../lib/stats/style.mjs";
 import { OWNER, scope } from "../lib/stats/data.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tmp = tempDir("agent-box-stats-");
+const tmp = tempDir("boxie-stats-");
 const FX = path.join(tmp, "events.jsonl");
 fs.writeFileSync(FX, fixture());
 const EMPTY = path.join(tmp, "missing.jsonl");
 const LIVE = path.join(tmp, "live.json");
 fs.writeFileSync(LIVE, JSON.stringify([
-  { name: "agent-box-lykos-impl-a", project: "lykos", run: "impl-a", created: (NOW - 400) * 1000,
+  { name: "boxie-lykos-impl-a", project: "lykos", run: "impl-a", created: (NOW - 400) * 1000,
     progress: { phase: "agent", started: (NOW - 372) * 1000, model: G, role: "implement", steps: 23, tools: 41,
       last: { tool: "edit", what: "src/ledger/write.ts", ts: (NOW - 3) * 1000 }, tokens: { input: 120000, output: 3400, cache_read: 880000 },
       questions_open: 0, blocked: false, autofix: 0 } },
-  { name: "agent-box-rakun-quick-9", project: "rakun", run: "quick-9", created: (NOW - 90) * 1000,
+  { name: "boxie-rakun-quick-9", project: "rakun", run: "quick-9", created: (NOW - 90) * 1000,
     progress: { phase: "test", started: (NOW - 88) * 1000, model: "cu/composer-2.5-fast", role: "quick", steps: 9, tools: 14,
       last: { tool: "bash", what: "npm test", ts: (NOW - 12) * 1000 }, tokens: { input: 40000, output: 900, cache_read: 10000 },
       questions_open: 1, blocked: true, autofix: 1 } },
-  { name: "agent-box-clikit-esc-2", project: "clikit", run: "esc-2", created: (NOW - 5) * 1000, progress: null },
+  { name: "boxie-clikit-esc-2", project: "clikit", run: "esc-2", created: (NOW - 5) * 1000, progress: null },
 ]));
 
-const ENV = { ...process.env, STATS_NOW: String(NOW), NO_COLOR: "", AGENT_BOX_LEDGER: FX, STATS_LIVE_FIXTURE: LIVE };
+const ENV = { ...process.env, STATS_NOW: String(NOW), NO_COLOR: "", BOXIE_LEDGER: FX, STATS_LIVE_FIXTURE: LIVE };
 delete ENV.STATS_TUI_HEADLESS;
 const stats = (args, env = {}) => execFileSync(process.execPath, [path.join(ROOT, "lib", "stats.mjs"), ...args], { env: { ...ENV, ...env }, encoding: "utf8" });
 const json = (...args) => JSON.parse(stats(["json", ...args]));
@@ -38,12 +38,12 @@ const VIEWS = [["overview"], ["models"], ["runs"], ["run", "impl-b"], ["run", "i
 
 test("a missing ledger renders every view without crashing", () => {
   for (const v of VIEWS) {
-    const out = stats([...v, "--color", "never", "--width", "80"], { AGENT_BOX_LEDGER: EMPTY, STATS_LIVE_FIXTURE: EMPTY });
+    const out = stats([...v, "--color", "never", "--width", "80"], { BOXIE_LEDGER: EMPTY, STATS_LIVE_FIXTURE: EMPTY });
     for (const l of out.split("\n")) assert.ok(strw(l) <= 80, `${v} line too wide: ${l}`);
   }
-  assert.match(stats(["runs", "--color", "never"], { AGENT_BOX_LEDGER: EMPTY }), /nothing recorded in this window/);
-  assert.match(stats(["run", "nope", "--color", "never"], { AGENT_BOX_LEDGER: EMPTY }), /no run event for 'nope'/);
-  const k = JSON.parse(stats(["json", "overview"], { AGENT_BOX_LEDGER: EMPTY })).header.kpis;
+  assert.match(stats(["runs", "--color", "never"], { BOXIE_LEDGER: EMPTY }), /nothing recorded in this window/);
+  assert.match(stats(["run", "nope", "--color", "never"], { BOXIE_LEDGER: EMPTY }), /no run event for 'nope'/);
+  const k = JSON.parse(stats(["json", "overview"], { BOXIE_LEDGER: EMPTY })).header.kpis;
   assert.equal(k.runs, 0);
   assert.equal(k.passRate, null);   // no denominator: "–", never 0
   assert.equal(k.cacheHit, null);
@@ -53,7 +53,7 @@ test("a missing ledger renders every view without crashing", () => {
 test("an empty ledger file is the same as a missing one", () => {
   const f = path.join(tmp, "empty.jsonl");
   fs.writeFileSync(f, "");
-  assert.match(stats(["--color", "never", "--width", "100"], { AGENT_BOX_LEDGER: f }), /runs 0 {4}pass – {4}first try –/);
+  assert.match(stats(["--color", "never", "--width", "100"], { BOXIE_LEDGER: f }), /runs 0 {4}pass – {4}first try –/);
 });
 
 for (const width of [80, 140]) {

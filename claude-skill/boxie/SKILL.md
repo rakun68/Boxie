@@ -1,12 +1,12 @@
 ---
-name: agent-box
-description: Delegate coding, writing, review, research or bug-hunt work to sandboxed OpenCode workers (Gemini, DeepSeek, Claude Opus via OmniRoute), run to-tickets features in ticket mode, convene a council of advisors (Sol, Gemini, DeepSeek) on a plan, close a phase with a whole-diff review, benchmark models, read the run ledger, and run the gate yourself. Use when the user asks to delegate, offload, fan out, run tickets, benchmark, get a second review or opinion, debate a plan or design, finish or close a phase, or hand work to Gemini, DeepSeek, Opus, Sol, OpenCode, OmniRoute, "the box" or "agent-box".
+name: boxie
+description: Delegate coding, writing, review, research or bug-hunt work to sandboxed OpenCode workers (Gemini, DeepSeek, Claude Opus via OmniRoute), run to-tickets features in ticket mode, convene a council of advisors (Sol, Gemini, DeepSeek) on a plan, close a phase with a whole-diff review, benchmark models, read the run ledger, and run the gate yourself. Use when the user asks to delegate, offload, fan out, run tickets, benchmark, get a second review or opinion, debate a plan or design, finish or close a phase, or hand work to Gemini, DeepSeek, Opus, Sol, OpenCode, OmniRoute, "the box" or "Boxie".
 ---
 
-# agent-box
+# Boxie
 
-Tool: `<agent-box>/delegate.sh` (Bash). Evidence behind this procedure:
-`research/workflow.md`; model and config facts: `research/opencode-customization.md`; roles: `agent-box.conf`,
+Tool: `<boxie>/delegate.sh` (Bash). Evidence behind this procedure:
+`research/workflow.md`; model and config facts: `research/opencode-customization.md`; roles: `boxie.conf`,
 overridden per project by `ROLE_*`, `REVIEW_MODE` and other lines in `projects/<repo>.env` (`delegate.sh roles <repo>`
 shows what is in effect).
 
@@ -20,7 +20,7 @@ the evidence.
    project file and its key, and OmniRoute from the host and from inside a container; each failure
    prints its fix. Run it first in a new session or after any setup change.
 2. `projects/<repo>.env` holds `OMNIROUTE_API_KEY` (the user fills it; never print it).
-3. The engine is the one `agent-box.conf` (or `agent-box.local.conf`) names, Podman by default. Use
+3. The engine is the one `boxie.conf` (or `boxie.local.conf`) names, Podman by default. Use
    that engine for images and containers and rebuild with `delegate.sh build <repo>`; never mix in
    the other one (on a Podman machine, never start Docker Desktop: its images are separate and stale).
 4. A recent `delegate.sh baseline <repo>` exists, so pre-existing failures are known.
@@ -32,8 +32,8 @@ the evidence.
 
 ## Write the task file (the harness builds the rest)
 
-Task files go in `<agent-box>/tasks/<project>-<phase>/`. Your other scratch (briefs, JSON payloads,
-captured logs, issue drafts, demo repos) goes in `<agent-box>/runs/.tmp/`, which `gc` clears after a
+Task files go in `<boxie>/tasks/<project>-<phase>/`. Your other scratch (briefs, JSON payloads,
+captured logs, issue drafts, demo repos) goes in `<boxie>/runs/.tmp/`, which `gc` clears after a
 day. Never write any of it into the workspace root, beside the repo, or in the system temp folder.
 
 Frontmatter drives the deterministic context pack (`lib/pack.mjs`): governing docs, traps, glossary
@@ -90,10 +90,10 @@ numbers; `stats`/`dash` are the user's dashboard.
 
 ## Watching
 
-With herdr running, every run opens a tab in the `agent-box` workspace: the real OpenCode TUI on the
-left, the agent-box feed and state (working / blocked / done) on the right. A `loop` also opens its
+With herdr running, every run opens a tab in the `boxie` workspace: the real OpenCode TUI on the
+left, the Boxie feed and state (working / blocked / done) on the right. A `loop` also opens its
 own tab: rounds, the running step and its time, each finding and where it went, decisions, and what
-to do when it stops. Never set `AGENT_BOX_HERDR=0` on a run the user may want to watch. Without herdr:
+to do when it stops. Never set `BOXIE_HERDR=0` on a run the user may want to watch. Without herdr:
 `delegate.sh loop-watch <repo> <loop>`,
 `delegate.sh watch <repo> <run-name>`, `delegate.sh tui <repo> <run-name>`, `delegate.sh stats live`. Record new
 measurements (time, steps, tokens, scope, honesty) in `research/findings.md`; never estimate.
@@ -134,7 +134,7 @@ and every later reviewer get it, with no stop and no `loop resume`.
 `delegate.sh continue <repo> <run-name> -m "<answer or next request>"` (or `-f msg.md`) resumes that
 worker's own OpenCode session, on its branch, with the same model, sealed files and test. It keeps
 everything it read and tried. Result: `agent/<run>-r2`, then `-r3`. A run started with
-`AGENT_BOX_PARK=1` (every loop round is) keeps its container; `continue` then runs the next round in
+`BOXIE_PARK=1` (every loop round is) keeps its container; `continue` then runs the next round in
 it, without a new clone, setup or session restore, else in a fresh container. The loop removes its
 parked containers when it ends; `unpark <repo> <run>|--all` or `clean` does it by hand.
 
@@ -162,7 +162,7 @@ the findings, `continue <last_run> --findings ...`, then `ticket-review <repo> <
 is ready: `feature <repo> <dir> report` and hand the manual-test checklist to the user; each bug they
 report becomes `defect <repo> <dir> "<title>" "<report>"`.
 
-**Different tasks at once**: independent tasks run in parallel, at most `AGENT_BOX_SLOTS` containers
+**Different tasks at once**: independent tasks run in parallel, at most `BOXIE_SLOTS` containers
 (default 4; ask the user for their machine's limit). Each slot mounts its own copy of the project's
 `CACHES` volumes, so parallel Gradle or cargo builds never share a lock. Start each `run` or `loop` in
 the background, about 100 s apart (the Podman VM dropped 3 starts within seconds once), then one
@@ -173,7 +173,7 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
 1. Write the task with its spec (a feature also gets a failing acceptance test, sealed and confirmed
    red; commit it on a side branch with `git hash-object`/`commit-tree`).
 2. `run --role implement` (Gemini 3.8 Flash high). Trivial edits whose place is known: `--role quick`
-   (free DeepSeek V4.1 Flash on OpenCode's own provider, 30-160 s on the light bench). A run that will go through `loop`: start it with `AGENT_BOX_PARK=1`, so the
+   (free DeepSeek V4.1 Flash on OpenCode's own provider, 30-160 s on the light bench). A run that will go through `loop`: start it with `BOXIE_PARK=1`, so the
    first fix round runs in its container (the loop parks its own rounds itself).
 3. Act on `next`. A gate failure: `continue` with the failure once; the same failure twice: rerun
    with `--role implement-hard` (DeepSeek V4.1 Flash max, a different family) with the failure
@@ -326,5 +326,5 @@ review found medium+ bugs 3-4 rounds in a row after the orchestrator had called 
 - `PROJECT_SLOTS=N` in `projects/<repo>.env` caps one project's containers (checks and base suites
   included); `1` runs it serially (one Gradle cache, one live server) while other projects use the
   rest. A waiting run prints who holds the slots.
-- A second checkout of agent-box (a worktree, a test install) sets `AGENT_BOX_NS` in its
-  `agent-box.local.conf`, so its images, containers and cache volumes never collide with the first.
+- A second checkout of Boxie (a worktree, a test install) sets `BOXIE_NS` in its
+  `boxie.local.conf`, so its images, containers and cache volumes never collide with the first.

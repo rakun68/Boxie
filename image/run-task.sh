@@ -15,7 +15,7 @@ log() { printf '[run-task %s] %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$OUT/harn
 # Phase for progress.mjs (delegate.sh stats live) and the TUI: setup, red, agent, test, autofix, done.
 phase() { printf '%s %s\n' "$1" "$autofix" >"$OUT/phase"; }
 phase setup
-node /opt/agent-box/progress.mjs >/dev/null 2>&1 &
+node /opt/boxie/progress.mjs >/dev/null 2>&1 &
 serve_pid="" prep_pid=""
 # The server may still be prep's (step 1b) when the run stops early: its pid file covers that, so a
 # parked container never keeps a server holding port 4096 for its next round.
@@ -25,7 +25,7 @@ trap 'phase done; kill $prep_pid $serve_pid $(cat /tmp/prep.serve 2>/dev/null) 2
 # START_SHA: where the worker starts (a continued run starts on its previous round's head). BASE_SHA
 # stays the original base, so the sealed check, review guard and bundle cover every round.
 START_SHA="${START_SHA:-$BASE_SHA}"
-# REUSE=1: a parked container from this session's previous round (delegate.sh, AGENT_BOX_PARK). The
+# REUSE=1: a parked container from this session's previous round (delegate.sh, BOXIE_PARK). The
 # clone, the installed dependencies and the session store are still here: fetch the new start and
 # switch to it; ignored files (build output, node_modules) stay.
 reuse_changed=all
@@ -49,8 +49,8 @@ fi
 # failed call. Mode changes stay out of the diff.
 git config core.fileMode false
 for w in gradlew mvnw; do [ -f "$w" ] && chmod +x "$w"; done
-git config user.name "agent-box (${MODEL:-none})"
-git config user.email "agent-box@localhost"
+git config user.name "boxie (${MODEL:-none})"
+git config user.email "boxie@localhost"
 git remote remove origin 2>/dev/null || true
 
 # 1b. Model list, OpenCode config and server, in the background while setup and the red check run:
@@ -73,7 +73,7 @@ prep() {
   # listed). A model that answers nothing is caught on the host (lib/ledger.mjs noOutput).
   case "$MODEL" in opencode/*) ;; *) jq -e --arg m "$MODEL" '[.data[]?.id] | index($m)' /tmp/models.json >/dev/null 2>&1 \
     || log "warning: model $MODEL is not in the OmniRoute key's model list" ;; esac
-  node /opt/agent-box/make-config.mjs >/tmp/prep.agent || { echo config >/tmp/prep.status; return; }
+  node /opt/boxie/make-config.mjs >/tmp/prep.agent || { echo config >/tmp/prep.status; return; }
   # A local OpenCode server, so `delegate.sh tui` (herdr) can attach the real OpenCode TUI to this
   # worker's session. The worker's `run` talks to it; without it, `run` starts its own in-process.
   if [ "${TUI:-0}" = 1 ]; then
@@ -132,10 +132,10 @@ nm_cache=0
 if [ -f package-lock.json ] && [ "${SETUP_CMD:-npm ci --no-audit --no-fund}" = "npm ci --no-audit --no-fund" ] \
    && mountpoint -q /work/repo/node_modules 2>/dev/null; then
   nm_cache=1
-  if [ -s node_modules/.agent-box-stamp ] && [ "$(nm_stamp)" = "$(cat node_modules/.agent-box-stamp)" ]; then
+  if [ -s node_modules/.boxie-stamp ] && [ "$(nm_stamp)" = "$(cat node_modules/.boxie-stamp)" ]; then
     log "setup skipped: the node_modules cache matches package-lock.json"; SETUP_CMD=""
   else
-    rm -f node_modules/.agent-box-stamp; SETUP_CMD="npm ci --no-audit --no-fund"
+    rm -f node_modules/.boxie-stamp; SETUP_CMD="npm ci --no-audit --no-fund"
   fi
 fi
 if [ -n "$SETUP_CMD" ]; then
@@ -149,7 +149,7 @@ if [ -n "$SETUP_CMD" ]; then
     bash -lc "$SETUP_CMD" >"$OUT/setup.log" 2>&1; setup_exit=$?
   fi
   log "setup exit $setup_exit"
-  [ "$nm_cache" = 1 ] && [ "$setup_exit" = 0 ] && nm_stamp >node_modules/.agent-box-stamp
+  [ "$nm_cache" = 1 ] && [ "$setup_exit" = 0 ] && nm_stamp >node_modules/.boxie-stamp
   [ "$setup_exit" = 0 ] || log "setup failed: \`$SETUP_CMD\` exited $setup_exit: $(tail -n 3 "$OUT/setup.log" | tr '\n' ' ' | cut -c1-300)"
 fi
 setup_s=$(( $(date +%s) - t0 ))
@@ -177,8 +177,8 @@ if [ "$weak_spec" = true ]; then
 elif [ "${SKIP_AGENT:-0}" = "unreachable" ]; then
   agent_exit=-2
 elif [ "${SKIP_AGENT:-0}" != "1" ] && [ "$setup_exit" = 0 ]; then
-  preamble=/opt/agent-box/preamble.md; [ "${REVIEW:-0}" = 1 ] && preamble=/opt/agent-box/preamble-review.md
-  [ -n "${PREAMBLE:-}" ] && preamble="/opt/agent-box/preamble-$PREAMBLE.md"
+  preamble=/opt/boxie/preamble.md; [ "${REVIEW:-0}" = 1 ] && preamble=/opt/boxie/preamble-review.md
+  [ -n "${PREAMBLE:-}" ] && preamble="/opt/boxie/preamble-$PREAMBLE.md"
   if [ -n "${CONTINUE_SESSION:-}" ]; then
     session_args=(--session "$CONTINUE_SESSION")
     prompt="$(printf '# Follow-up from the orchestrator (round %s)\n\nYour earlier work is committed on this branch. The operating conditions from your first message still apply, including the final report block and BLOCKED.\n\n' "${ROUND:-2}"; cat /in/task.md)"
@@ -255,7 +255,7 @@ recover_final() {
   local sid n
   sid="$(jq -r 'select(.sessionID) | .sessionID' "$OUT/events.jsonl" 2>/dev/null | tail -n 1)"
   [ -n "$sid" ] && [ -f ~/.local/share/opencode/opencode.db ] || return 0
-  n="$(node --no-warnings /opt/agent-box/recover-final.mjs "$OUT/events.jsonl" ~/.local/share/opencode/opencode.db "$sid" 2>>"$OUT/harness.log")"
+  n="$(node --no-warnings /opt/boxie/recover-final.mjs "$OUT/events.jsonl" ~/.local/share/opencode/opencode.db "$sid" 2>>"$OUT/harness.log")"
   [ "${n:-0}" -gt 0 ] 2>/dev/null && log "events.jsonl lost the last step: recovered $n event(s) from the session store"
   return 0
 }
@@ -279,8 +279,8 @@ final_message() {
       if (!b) return null;
       try { return JSON.parse(b[1]); } catch { return { parse_error: b[1].slice(0, 500) }; }
     };
-    fs.writeFileSync("/out/report.json", JSON.stringify(block("agent-box-report")));
-    let f = block("agent-box-findings");
+    fs.writeFileSync("/out/report.json", JSON.stringify(block("boxie-report")));
+    let f = block("boxie-findings");
     // {"findings": [...]} inside the fence: the array (lib/ledger.mjs finalBlock does the same).
     if (f && !Array.isArray(f) && Array.isArray(f.findings)) f = f.findings;
     if (f !== null) fs.writeFileSync("/out/findings.json", JSON.stringify(f));
@@ -294,7 +294,7 @@ session_id="$(jq -r 'select(.sessionID) | .sessionID' "$OUT/events.jsonl" 2>/dev
 cut_resumes=0
 resume_cut() {
   while [ "$cut_resumes" -lt "${CUT_RESUMES:-2}" ] && [ "$agent_exit" = 0 ] && [ -n "$session_id" ] \
-     && [ "$(node /opt/agent-box/last-stop.mjs "$OUT/events.jsonl")" = length ]; do
+     && [ "$(node /opt/boxie/last-stop.mjs "$OUT/events.jsonl")" = length ]; do
     cut_resumes=$((cut_resumes + 1))
     log "cut off at the output cap: resuming $session_id ($cut_resumes)"
     local msg='Your last turn was cut off at the output limit while you were still thinking, so nothing was done. Stop planning the whole change at once: make the edits now with your tools, one small step at a time, and commit as you go. End with the report block.'
@@ -341,7 +341,7 @@ A reviewer will now read `git diff` of your branch against the task. Do their jo
 Fix and commit what you find, rerun the tests, then end with the report block, keeping every decision
 and dispute from your earlier report. If nothing is missing, say so in one line, then the block:
 
-```agent-box-report
+```boxie-report
 {"status": "done|partial|blocked", "tests": "pass|fail|not_run", "test_summary": "<summary line exactly as printed>",
  "decisions": ["<choices the task left open, one line each>"],
  "context_gaps": ["<what the task or context pack should have told you but did not>"],
@@ -386,18 +386,18 @@ stopped_midway() {
 }
 if [ "${REVIEW:-0}" != 1 ] && [ "$agent_exit" = 0 ] && [ -n "$session_id" ] && [ -z "$blocked" ] \
    && ! jq -e 'type == "object" and (has("parse_error") | not)' "$OUT/report.json" >/dev/null 2>&1 \
-   && ! grep -q 'agent-box-tests' "$OUT/final.md" 2>/dev/null \
+   && ! grep -q 'boxie-tests' "$OUT/final.md" 2>/dev/null \
    && ! grep -q '^{"type":"error"' "$OUT/events.jsonl" 2>/dev/null; then
   report_asked=1
   if stopped_midway; then
     log "stopped mid-task (no report block): resuming"
-    rmsg='Your turn ended right after announcing a next step, with no tool call and no `agent-box-report` block. Continue the task from there, finish it, and end with the report block.'
+    rmsg='Your turn ended right after announcing a next step, with no tool call and no `boxie-report` block. Continue the task from there, finish it, and end with the report block.'
     rmin="${AUTOFIX_MIN:-15}"
   else
     log "no report block: asking for it"
-    rmsg='Your last message has no readable `agent-box-report` block. Do not change anything. Reply with only that fenced block, its body one JSON object (JSON, not YAML: double-quoted keys and strings, arrays in brackets), filled in from the work you did:
+    rmsg='Your last message has no readable `boxie-report` block. Do not change anything. Reply with only that fenced block, its body one JSON object (JSON, not YAML: double-quoted keys and strings, arrays in brackets), filled in from the work you did:
 
-```agent-box-report
+```boxie-report
 {"status": "done|partial|blocked", "tests": "pass|fail|not_run", "test_summary": "<summary line>", "decisions": [], "context_gaps": [], "test_dispute": [], "disputes": []}
 ```'
     pe="$(jq -r 'if type == "object" and has("parse_error") then .parse_error else empty end' "$OUT/report.json" 2>/dev/null | head -c 300)"
@@ -427,7 +427,7 @@ fi
 findings_readable() {
   node -e '
     const t = require("fs").readFileSync("/out/final.md", "utf8");
-    const fence = t.match(/```[^\n`]*?(?:\r?\n[ \t]*)?agent-box-findings[^\n]*\n([\s\S]*?)\n\s*```/);
+    const fence = t.match(/```[^\n`]*?(?:\r?\n[ \t]*)?boxie-findings[^\n]*\n([\s\S]*?)\n\s*```/);
     const tries = fence ? [fence[1]] : [t.trim(), ...[...t.matchAll(/```(?:json)?[ \t]*\r?\n([\s\S]*?)\n\s*```/g)].map((m) => m[1]).reverse()];
     for (const s of tries) { try { const v = JSON.parse(s); if (Array.isArray(v) || Array.isArray(v?.findings)) process.exit(0); } catch {} }
     process.exit(1);' 2>/dev/null
@@ -437,11 +437,11 @@ if [ "${REVIEW:-0}" = 1 ] && [ -z "${PREAMBLE:-}" ] && [ "$agent_exit" = 0 ] && 
   report_asked=1
   if stopped_midway; then
     log "review stopped mid-task (no findings block): resuming"
-    rmsg='Your turn ended right after announcing a next step, with no tool call and no `agent-box-findings` block. Continue from there (finish any reproduction you were writing), then end with that fenced block: a JSON array of your findings, `[]` when nothing blocks.'
+    rmsg='Your turn ended right after announcing a next step, with no tool call and no `boxie-findings` block. Continue from there (finish any reproduction you were writing), then end with that fenced block: a JSON array of your findings, `[]` when nothing blocks.'
     rmin=15
   else
     log "no readable findings block: asking for it"
-    rmsg='Your last message has no readable `agent-box-findings` block. Do not review again. Reply with only that fenced block (```agent-box-findings, a JSON array of your findings in the format the task gives, `[]` when nothing blocks).'
+    rmsg='Your last message has no readable `boxie-findings` block. Do not review again. Reply with only that fenced block (```boxie-findings, a JSON array of your findings in the format the task gives, `[]` when nothing blocks).'
     rmin=5
   fi
   t0=$(date +%s)
@@ -474,7 +474,7 @@ settle() {
     return
   fi
   if [ -n "$(git status --porcelain)" ]; then
-    git add -A && git commit -q -m "agent-box: uncommitted changes left by the agent" && leftovers=1
+    git add -A && git commit -q -m "boxie: uncommitted changes left by the agent" && leftovers=1
   fi
   # SEALED holds newline-separated globs relative to the repo root. Checked against where this round
   # started: an earlier round's edits were reverted before it ended, and an orchestrator's correction
@@ -491,7 +491,7 @@ settle() {
   for f in "${touched[@]}"; do
     if git cat-file -e "$START_SHA:$f" 2>/dev/null; then git checkout -q "$START_SHA" -- "$f"; else git rm -q -f -- "$f"; fi
   done
-  git commit -q -m "agent-box: revert worker edits to sealed files" -- "${touched[@]}" || true
+  git commit -q -m "boxie: revert worker edits to sealed files" -- "${touched[@]}" || true
 }
 
 # 5. Tests, run by the harness, never trusted from the agent. Skipped for read-only reviews.

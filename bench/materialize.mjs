@@ -17,10 +17,10 @@ export const BENCH = path.dirname(fileURLToPath(import.meta.url));
 
 const IDENTITY = {
   GIT_AUTHOR_NAME: "bench",
-  GIT_AUTHOR_EMAIL: "bench@agent-box.invalid",
+  GIT_AUTHOR_EMAIL: "bench@boxie.invalid",
   GIT_AUTHOR_DATE: "1767225600 +0000", // 2026-01-01T00:00:00Z
   GIT_COMMITTER_NAME: "bench",
-  GIT_COMMITTER_EMAIL: "bench@agent-box.invalid",
+  GIT_COMMITTER_EMAIL: "bench@boxie.invalid",
   GIT_COMMITTER_DATE: "1767225600 +0000",
 };
 

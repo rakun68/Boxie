@@ -5,5 +5,5 @@ setlocal
 set "GITBASH=%ProgramFiles%\Git\bin\bash.exe"
 if not exist "%GITBASH%" for /f "delims=" %%G in ('where git 2^>nul') do if not defined GB set "GB=%%~dpG..\bin\bash.exe"
 if not exist "%GITBASH%" if defined GB set "GITBASH=%GB%"
-if not exist "%GITBASH%" (echo agent-box: Git Bash not found; install Git for Windows 1>&2 & exit /b 1)
+if not exist "%GITBASH%" (echo boxie: Git Bash not found; install Git for Windows 1>&2 & exit /b 1)
 "%GITBASH%" "%~dp0delegate.sh" %*

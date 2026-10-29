@@ -1,6 +1,6 @@
 # The ledger
 
-`ledger/events.jsonl` (git-ignored; `AGENT_BOX_LEDGER` overrides the path) holds one JSON object
+`ledger/events.jsonl` (git-ignored; `BOXIE_LEDGER` overrides the path) holds one JSON object
 per line for every run, check, review, label, outcome and bench result, across all projects. The
 harness writes it deterministically from each run's `summary.json` and `events.jsonl`; no model
 writes to it. `delegate.sh stats` reads it. Nothing is ever deleted from it.
@@ -18,7 +18,7 @@ skipped by every reader. Secrets are redacted before writing.
 | `type` | one of the types below |
 | `project` | repo folder name, lowercase |
 | `run` | run name (`runs/<project>/<run>`), or null |
-| `role` | role from `agent-box.conf`, or null when `--model` was used |
+| `role` | role from `boxie.conf`, or null when `--model` was used |
 | `model` | OmniRoute model id, or null |
 | `harness` | 8-hex content hash of the worker-facing harness files (`lib/harness-hash`); compares versions |
 

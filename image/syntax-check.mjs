@@ -1,4 +1,4 @@
-// Fast syntax check of one edited file, run by the agent-box OpenCode plugin after every edit.
+// Fast syntax check of one edited file, run by the boxie OpenCode plugin after every edit.
 // Prints the error and exits 1 when the file does not parse; prints nothing and exits 0 otherwise,
 // or when the language is not covered. Built in: parse only, no type check, no imports resolved.
 //

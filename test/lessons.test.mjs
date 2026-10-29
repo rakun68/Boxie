@@ -75,7 +75,7 @@ test("gc: dry run lists, --yes removes model lists and old archives, parked runs
   const newTgz = mk("p/r2/opencode-data.tgz", "z");
   const parked = mk("p/r3/opencode-data.tgz", "z", true); mk("p/r3/parked", "c img");
   const summary = mk("p/r1/summary.json", "{}");
-  const gc = (...a) => execFileSync("node", [path.join(ROOT, "lib", "gc.mjs"), runs, ...a], { encoding: "utf8", env: { ...process.env, AGENT_BOX_GC_TMP: tmp("ab-gct-") } });
+  const gc = (...a) => execFileSync("node", [path.join(ROOT, "lib", "gc.mjs"), runs, ...a], { encoding: "utf8", env: { ...process.env, BOXIE_GC_TMP: tmp("ab-gct-") } });
   assert.match(gc(), /dry run/);
   assert.ok(fs.existsSync(models) && fs.existsSync(oldTgz));
   gc("--yes");
@@ -102,7 +102,7 @@ test("gc: old agent/* branches, scratch and system temp leftovers go; recent and
   const newScratch = mk(path.join(runs, ".tmp", "message.def456"), "m");
   const leftover = mk(path.join(sysTmp, "ab-loop-Xy12Zq"), "t", true);
   const notOurs = mk(path.join(sysTmp, "ab-build.sh"), "t", true);
-  const gc = (...a) => execFileSync("node", [path.join(ROOT, "lib", "gc.mjs"), runs, ...a], { encoding: "utf8", env: { ...process.env, AGENT_BOX_GC_TMP: sysTmp } });
+  const gc = (...a) => execFileSync("node", [path.join(ROOT, "lib", "gc.mjs"), runs, ...a], { encoding: "utf8", env: { ...process.env, BOXIE_GC_TMP: sysTmp } });
   assert.match(gc(), /2 .*agent\/\* branches older than 14 days/);
   gc("--yes");
   assert.deepEqual(g("branch", "--list", "agent/*", "--format=%(refname:short)").trim().split("\n"), ["agent/kept", "agent/new"]);

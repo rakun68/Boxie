@@ -1,4 +1,4 @@
-# agent-box
+# Boxie
 
 Runs [OpenCode](https://opencode.ai) workers on a git repo inside disposable Podman or Docker
 containers, with models served through OmniRoute. Built for Claude Code to orchestrate: it plans,
@@ -15,7 +15,7 @@ agents, effort, permissions; OmniRoute behaviour).
 | bash | Git Bash on Windows; any bash on Linux or macOS |
 | Node.js 20.11+ | host-side scripts (`lib/`); tested on 24.11 |
 | git, jq, curl | on `PATH` |
-| Podman or Docker | the worker containers. Podman is the default (`AGENT_BOX_ENGINE` in `agent-box.conf`) |
+| Podman or Docker | the worker containers. Podman is the default (`BOXIE_ENGINE` in `boxie.conf`) |
 | OmniRoute | running on the host (default `http://localhost:20128/v1`), with an API key per project |
 | `gh` (optional) | only for `issue: N` in a task: issues are fetched on the host |
 | herdr (optional) | a live tab per run and per loop |
@@ -23,8 +23,8 @@ agents, effort, permissions; OmniRoute behaviour).
 ## Install
 
 ```bash
-git clone https://github.com/rakun68/agent-box.git
-cd agent-box
+git clone https://github.com/rakun68/Boxie.git
+cd Boxie
 npm ci                          # host-side helpers (one dependency: yaml)
 podman machine start            # Podman on Windows or macOS; skip on Linux or with Docker
 ./delegate.sh build             # the base worker image: Node, git, ripgrep, OpenCode (image/Dockerfile)
@@ -44,8 +44,8 @@ key, and that a container reaches OmniRoute over the route workers use.
 | host address in containers | found through the machine (`host.containers.internal`) | same | `host-gateway` |
 
 Containers reach OmniRoute as `host.docker.internal`. On Linux the host service must listen where a
-container can reach it (not only `127.0.0.1`), or set `AGENT_BOX_NETWORK=host` and
-`OMNIROUTE_BASE_URL=http://localhost:20128/v1`. `AGENT_BOX_HOST_IP` overrides the address on any
+container can reach it (not only `127.0.0.1`), or set `BOXIE_NETWORK=host` and
+`OMNIROUTE_BASE_URL=http://localhost:20128/v1`. `BOXIE_HOST_IP` overrides the address on any
 platform. Tested on Windows 10 with Podman 6.1 (2026-10-17); the unit tests and `doctor` also run in
 a Linux container. macOS and Docker Engine on Linux are untested.
 
@@ -53,14 +53,14 @@ a Linux container. macOS and Docker Engine on Linux are untested.
 
 | file | in git | what |
 | --- | --- | --- |
-| `agent-box.conf` | yes | engine, roles, review and loop defaults, context and self-check settings |
-| `agent-box.local.conf` | no | this machine's overrides: `AGENT_BOX_SLOTS`, `AGENT_BOX_ENGINE`, `AGENT_BOX_NS`, `AGENT_BOX_REPOS` |
-| `projects/<repo>.env` | no | the project's OmniRoute key and settings; any `agent-box.conf` key wins here |
+| `boxie.conf` | yes | engine, roles, review and loop defaults, context and self-check settings |
+| `boxie.local.conf` | no | this machine's overrides: `BOXIE_SLOTS`, `BOXIE_ENGINE`, `BOXIE_NS`, `BOXIE_REPOS` |
+| `projects/<repo>.env` | no | the project's OmniRoute key and settings; any `boxie.conf` key wins here |
 | `projects/<repo>.context.yaml`, `.Dockerfile` | yes | context map; the project's toolchain image |
 | `prices.conf`, `prices.local.conf` | yes / no | USD per 1M tokens per model, for `stats` |
 
-**A second checkout** (a worktree, a test install) sets `AGENT_BOX_NS=<name>` in its
-`agent-box.local.conf`: its images (`agent-box-<name>`), containers, cache volumes and herdr workspace
+**A second checkout** (a worktree, a test install) sets `BOXIE_NS=<name>` in its
+`boxie.local.conf`: its images (`boxie-<name>`), containers, cache volumes and herdr workspace
 are then its own, and `clean` and `gc` touch only those.
 
 ## Set up a project
@@ -88,11 +88,11 @@ needs Go, Rust, CMake or a JDK gets its own image, built on the base (`setup` wr
 
 ```bash
 cp projects/example.Dockerfile projects/myrepo.Dockerfile    # uncomment what the project needs
-./delegate.sh build /path/to/myrepo                          # builds agent-box-myrepo, used for every run
+./delegate.sh build /path/to/myrepo                          # builds boxie-myrepo, used for every run
 ./delegate.sh config /path/to/myrepo                         # image, caches, every setting the .env sets
 ```
 
-**Settings.** Any `agent-box.conf` key can be set in the project's `.env` and wins there. The ones
+**Settings.** Any `boxie.conf` key can be set in the project's `.env` and wins there. The ones
 made for other stacks (examples in `projects/example.env`):
 
 | Key | What it does |
@@ -149,14 +149,14 @@ Watching: with herdr running, every run and loop opens a tab. Without it:
 
 ## Use from Claude Code
 
-agent-box is built to be driven by an orchestrating agent. Install the skill so Claude Code knows the
+Boxie is built to be driven by an orchestrating agent. Install the skill so Claude Code knows the
 procedure (task file, verdicts, the loop, accepting):
 
 ```bash
-./delegate.sh install-skill        # writes ~/.claude/skills/agent-box/SKILL.md with this clone's path
+./delegate.sh install-skill        # writes ~/.claude/skills/boxie/SKILL.md with this clone's path
 ```
 
-Then ask Claude Code to "delegate this to agent-box". Keep `claude-skill/` and your installed copy in
+Then ask Claude Code to "delegate this to Boxie". Keep `claude-skill/` and your installed copy in
 step when either changes.
 
 ## Trust boundary
@@ -167,17 +167,17 @@ step when either changes.
   written by the container is ever executed on the host.
 - **Your commits:** on the host, the worker's commits are rewritten with your repo's `user.name` and
   `user.email`, and signed when `commit.gpgSign` is set (`lib/own.mjs`). The signing key stays on the
-  host. The worker's model is kept in an `Agent-Box-Worker:` trailer.
+  host. The worker's model is kept in a `Boxie-Worker:` trailer.
 - **Container:** non-root `node` user, `--cap-drop ALL`, `no-new-privileges`, `--init`, pid and memory
   limits. Removed after every run.
 - **Not covered:** network egress is open (needed for `npm ci`). A hostile model can send out the repo
   source and the OmniRoute key, nothing more. Shared kernel (`runc`), not a VM.
-- The npm cache is a shared named volume (`agent-box-npm-cache`); npm checks lockfile integrity hashes.
+- The npm cache is a shared named volume (`boxie-npm-cache`); npm checks lockfile integrity hashes.
   Other caches are the project's `CACHES` volumes, shared by every project that names the same one
   (RakunMiniItems: `gradle`, holding the wrapper, dependencies and toolchain JDKs). Each concurrency
-  slot mounts its own copy, `agent-box-<name><slot>-cache`, seeded once from `agent-box-<name>-cache`:
+  slot mounts its own copy, `boxie-<name><slot>-cache`, seeded once from `boxie-<name>-cache`:
   two containers on one Gradle cache deadlock on its journal lock (RakunMiniItems, 2026-10-15).
-  `AGENT_BOX_SLOT_CACHES=0` shares one volume again.
+  `BOXIE_SLOT_CACHES=0` shares one volume again.
   Java projects: `{tests}` in `test_file_command` expands to `--tests <class>` for each sibling `*Test.java`.
 
 ## Setup per project
@@ -233,7 +233,7 @@ Optional but recommended: `projects/<repo>.context.yaml`, the **context map** (s
 
 # benchmark
 ./delegate.sh bench list [suite]
-./delegate.sh bench run <suite[/task]> --roles a,b [--repeat N] [--parallel K]   # AGENT_BOX_REPOS: real repos elsewhere
+./delegate.sh bench run <suite[/task]> --roles a,b [--repeat N] [--parallel K]   # BOXIE_REPOS: real repos elsewhere
 node bench/validate.mjs [suite]                     # base fails, reference passes, cheats fail
 ```
 
@@ -327,13 +327,13 @@ written; the harness records it. This exit cut test-cheating sharply in Impossib
 It is also how a worker asks a question: it phrases BLOCKED as one, and the orchestrator answers with
 `continue`.
 
-**Watching**: when [herdr](https://herdr.dev) is running, every run opens a tab in an `agent-box`
+**Watching**: when [herdr](https://herdr.dev) is running, every run opens a tab in a `boxie`
 workspace. Left: the real OpenCode TUI attached to the worker's session (the container runs `opencode
 serve`, the worker runs `opencode run --attach`, the pane runs `podman exec -it ... opencode attach`),
-with its subagent sessions; typing there reaches the worker. Right: the agent-box feed (`watch`):
+with its subagent sessions; typing there reaches the worker. Right: the Boxie feed (`watch`):
 phases, every tool call, questions the moment they are asked, the verdict and `next`; it reports the
-state to herdr (working, blocked, done). Enter closes the tab. `AGENT_BOX_TUI=0` keeps only the feed,
-`AGENT_BOX_HERDR=0` turns tabs off. Without herdr: `watch <repo> <run>`, `tui <repo> <run>`, or
+state to herdr (working, blocked, done). Enter closes the tab. `BOXIE_TUI=0` keeps only the feed,
+`BOXIE_HERDR=0` turns tabs off. Without herdr: `watch <repo> <run>`, `tui <repo> <run>`, or
 `stats live` for every running worker at once.
 
 A `loop` opens one more tab of its own (`loop-watch <repo> <loop>` without herdr), fed by
@@ -343,7 +343,7 @@ advice), what is fixed and still open, regressions, each decision and escalation
 what the orchestrator does next with the command. The check that reruns the reproductions has no tab
 of its own; it shows only here.
 
-**Concurrency**: at most `AGENT_BOX_SLOTS` containers run at once (default 4), whatever starts them;
+**Concurrency**: at most `BOXIE_SLOTS` containers run at once (default 4), whatever starts them;
 the rest wait for a slot. `delegate.sh wait <repo> <name>... [--any] [--questions]` blocks until runs
 or loops end and prints each one's short report, so an orchestrator waits on one background command
 instead of polling.
@@ -377,7 +377,7 @@ stays the first round's, so the sealed check covers every round. Continuing an e
 forks it (`-r2b`). Verified 2026-10-12: a resumed Gemini worker edited without re-reading the file
 and recalled what it read in round 1 (cache read 155k tokens).
 
-## Roles (`agent-box.conf`)
+## Roles (`boxie.conf`)
 
 | role | model | use |
 | --- | --- | --- |
@@ -400,9 +400,9 @@ and recalled what it read in round 1 (cache read 155k tokens).
 | free-deepseek / free-glm | `opencode/deepseek-v4.1-flash-free` / `opencode/glm-5.3-flash-free` | free models on OpenCode's own provider, not OmniRoute: container runs only. At the free limit the run goes on with `FREE_FALLBACK` in the same session (`summary.json` `fell_back_from`). The free tier may keep prompts for training |
 
 One worker per task; `fanout` stays available but no workflow uses it. Independent tasks run in
-parallel, up to `AGENT_BOX_SLOTS`.
+parallel, up to `BOXIE_SLOTS`.
 
-**Review mode** (`REVIEW_MODE` in `agent-box.conf`, per project in `projects/<repo>.env`;
+**Review mode** (`REVIEW_MODE` in `boxie.conf`, per project in `projects/<repo>.env`;
 `lib/reviewmode.mjs`): `split` (the default) is two reviewers in parallel, review-spec and review-std;
 `both` is one review-both covering both axes. `review`, `loop`, `loop resume`, `ticket`, `feature ...
 run` and `ticket-review` take `--review-mode split|both` or `--roles a,b` (one axis: `--roles
@@ -441,7 +441,7 @@ base commit (`BASE_SUITE_CMD`, default the project's `TEST_CMD`; `LOOP_BASE_SUIT
 its failing test names are kept in `runs/<project>/.basecache/<sha>.json`: checks then run the neighbour
 tests on the branch only and compare names. Without a usable suite result (a crash, a timeout, no
 names) a check runs the base itself, once per test set. Each check logs its seconds per step
-(`AGENT-BOX-TIME`), shown by `loop-watch`. A stall (a reproduction still failing after `LOOP_STUCK` (2) fixes, a regression or a
+(`BOXIE-TIME`), shown by `loop-watch`. A stall (a reproduction still failing after `LOOP_STUCK` (2) fixes, a regression or a
 re-broken proof after 1, serious items after `LOOP_SOFT_ROUNDS` (2) fix rounds, `LOOP_MAX_FIXES` (3)
 fix rounds, or a fix that fails its own tests) starts `LOOP_FRESH` attempts once, in parallel from the
 base, with the task, the rulings and the proof suite (no earlier diff); each passing one is checked
@@ -459,7 +459,7 @@ cap, Lykos T174b) is resumed in the same session up to twice (`CUT_RESUMES`) bef
 `cut_resumes` in the summary counts them.
 
 **Per project**: any `ROLE_*`, `REVIEW_MODE`, `REVIEW_ROLES`, `SCOUT_MODEL`, `TICKET_ESCALATE_*` or `LOOP_*` line in
-`projects/<repo>.env` overrides `agent-box.conf` for that project, in `delegate.sh` and in ticket mode
+`projects/<repo>.env` overrides `boxie.conf` for that project, in `delegate.sh` and in ticket mode
 alike. `delegate.sh roles <repo>` prints what is in effect and marks the project's own lines.
 
 Budget (user, 2026-10-12/13). Quota pools: Opus and Sonnet share one, all Gemini models share one;
@@ -486,14 +486,14 @@ Measured so far (one task each, so treat as anecdotes): on a comment fix, Compos
 - **`scout`** subagent on Gemini 3.8 Flash: read-only search that every worker may call, so premium
   workers spend their quota on reasoning.
 - **Skills**: Ponytail (`ponytail`, `ponytail-review`; baked into the image), the project's own `.claude/skills/` (filtered by `worker_skills` in the context map, so
-  skills that interview a human are hidden) plus agent-box's `box-verify` and `box-prove-finding`.
+  skills that interview a human are hidden) plus Boxie's `box-verify` and `box-prove-finding`.
 - `reasoning_effort` from the role, as a model option.
 - **Context**: each model gets limits, so OpenCode compacts the session at `COMPACT_AT` tokens
   (110000) and prunes old tool output in continued rounds. OpenCode never compacts a model registered
   without `limit.context`. Step latency grows with context: median 4 s a step under 60k tokens, 42 s
   at 120-180k (RakunMiniItems t51, 2026-10-16). `COMPACT_AT=0` turns it off.
 - **`api`** (`image/api.mjs`): `api find|show|grep` print signatures from the JVM dependency jars in
-  the Gradle and Maven caches, indexed once into the shared `agent-box-api-cache` volume. Workers had
+  the Gradle and Maven caches, indexed once into the shared `boxie-api-cache` volume. Workers had
   spent 36 of 61 shell calls decompiling jars by hand (t51). The plugin points at it when a worker runs
   javap or unzip on the caches.
 - **Self-check** (`SELF_CHECK=1`, off by default): a first round that changed code gets one more turn
@@ -504,7 +504,7 @@ Measured so far (one task each, so treat as anecdotes): on a comment fix, Compos
 
 ## Engine
 
-`AGENT_BOX_ENGINE` in `agent-box.conf`: `podman` (default) or `docker`. Build once per engine.
+`BOXIE_ENGINE` in `boxie.conf`: `podman` (default) or `docker`. Build once per engine.
 Podman needs user-mode networking (`podman machine set --user-mode-networking`), because OmniRoute
 listens on 127.0.0.1 and only gvproxy's host address reaches the host's loopback.
 
@@ -535,13 +535,13 @@ Measured 2026-10-12, one full Lykos suite each, same commit, same machine:
 | `image/run-task.sh` | Container side: clone, setup, config, OpenCode, sealed check, tests, bundle |
 | `image/make-config.mjs` | Per-run OpenCode config: agents, scout, permissions, skills, effort |
 | `image/preamble*.md`, `image/skills/` | Operating conditions and worker skills |
-| `agent-box.conf` | Engine, roles, review defaults, scout model |
+| `boxie.conf` | Engine, roles, review defaults, scout model |
 | `projects/*.env` | Per-project key and settings. Git-ignored |
 | `projects/*.context.yaml` | Per-project context map |
 | `projects/*.Dockerfile` | Per-project image: the toolchain on top of the base (`projects/example.Dockerfile`) |
 | `research/` | The research this design rests on |
 | `runs/` | Run outputs. Git-ignored |
-| `claude-skill/agent-box/SKILL.md` | The Claude Code skill: the orchestrator's procedure |
+| `claude-skill/boxie/SKILL.md` | The Claude Code skill: the orchestrator's procedure |
 
 After changing anything under `image/`, run `./delegate.sh build`, then `./delegate.sh build <repo>` for each project with its own Dockerfile. To update OpenCode, change
 `OPENCODE_VERSION` in `image/Dockerfile` and rebuild.

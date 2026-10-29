@@ -27,9 +27,9 @@ const ROOTS = [path.join(HOME, ".gradle/caches/modules-2/files-2.1"), path.join(
   ...(process.env.API_JARS || "").split(":").filter(Boolean)];
 const MAX_LINES = Number(process.env.API_MAX_LINES || 200);
 
-// ~/.cache/agent-box-api is a volume every slot shares (delegate.sh); files are written atomically.
+// ~/.cache/boxie-api is a volume every slot shares (delegate.sh); files are written atomically.
 function cacheDir() {
-  for (const d of [process.env.API_CACHE, path.join(HOME, ".cache/agent-box-api"), path.join(os.tmpdir(), "agent-box-api")].filter(Boolean)) {
+  for (const d of [process.env.API_CACHE, path.join(HOME, ".cache/boxie-api"), path.join(os.tmpdir(), "boxie-api")].filter(Boolean)) {
     try { fs.mkdirSync(d, { recursive: true }); fs.accessSync(d, fs.constants.W_OK); return d; } catch {}
   }
   return os.tmpdir();
@@ -112,7 +112,7 @@ function extract(jar, want) {
 }
 
 // Decompiled source of one class (with its inner classes), cached. Vineflower ships in the image.
-const VINEFLOWER = process.env.API_DECOMPILER || "/opt/agent-box/vineflower.jar";
+const VINEFLOWER = process.env.API_DECOMPILER || "/opt/boxie/vineflower.jar";
 function sourceOf(jar, cls) {
   const f = path.join(CACHE, `${key(jar)}.${cls}.java`);
   if (fs.existsSync(f)) return fs.readFileSync(f, "utf8");

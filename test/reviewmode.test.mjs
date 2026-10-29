@@ -44,7 +44,7 @@ test("delegate.sh roles: the default stack, and the review mode a project sets",
   execFileSync("git", ["-C", dir, "init", "-q"]);
   const env = path.join(dir, "settings.env");
   fs.writeFileSync(env, "REVIEW_MODE=both\n");
-  const out = execFileSync("bash", [path.join(BOX, "delegate.sh"), "roles", dir], { encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env } });
+  const out = execFileSync("bash", [path.join(BOX, "delegate.sh"), "roles", dir], { encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env } });
   const row = (n) => out.split("\n").find((l) => l.split(/\s+/)[0] === n)?.split(/\s+/);
   assert.deepEqual(row("REVIEW_MODE"), ["REVIEW_MODE", "project", "both"]);
   assert.equal(row("LOOP_MAX_ROUNDS")?.[2], "5");
@@ -69,7 +69,7 @@ test("delegate.sh review --paths: one area of the diff; a role@effort keeps its 
   const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
   try {
     spawnSync("bash", ["delegate.sh", "review", dir, "agent/p", "--against", "main", "--name", "P", "--roles", "review-both-gemini@low", "--paths", "b.txt"],
-      { cwd: BOX, encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env, AGENT_BOX_HERDR: "0" } });
+      { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
     const tdir = fs.readdirSync(runs).find((f) => f.startsWith(".review-"));
     const task = fs.readFileSync(path.join(runs, tdir, "task-review-both-gemini-low.md"), "utf8");
     assert.match(task, /both axes, spec and standards/, "review-both-* reads the review-both prompt");
@@ -96,7 +96,7 @@ test("delegate.sh review in mode both: one review-both run, its own prompt, --pr
   fs.writeFileSync(prior, "## What the last fix was for\n");
   const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
   const review = (...a) => spawnSync("bash", ["delegate.sh", "review", dir, "agent/x", ...a],
-    { cwd: BOX, encoding: "utf8", env: { ...process.env, AGENT_BOX_PROJECT_ENV: env, AGENT_BOX_HERDR: "0" } });
+    { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
   try {
     review("--name", "B", "--prior", `both=${prior}`);
     const tdir = fs.readdirSync(runs).find((f) => f.startsWith(".review-"));
@@ -115,11 +115,11 @@ test("delegate.sh review in mode both: one review-both run, its own prompt, --pr
 
 test("findings blocks: the name on the fence's line or on the next one", () => {
   const dir = tmp("ab-block-");
-  const read = (text) => { fs.writeFileSync(path.join(dir, "final.md"), text); return finalBlock(dir, "agent-box-findings"); };
-  assert.deepEqual(read("x\n```agent-box-findings\n[1]\n```\n"), [1]);
-  assert.deepEqual(read("x\n```\nagent-box-findings\n[{\"a\": 2}]\n```\n"), [{ a: 2 }], "RakunMiniItems rv46: the name below a bare fence");
-  assert.deepEqual(read("x\n```json\nagent-box-findings\n[3]\n```\n"), [3]);
-  assert.equal(read("```agent-box-report\n{}\n```\n"), null, "another block is not the findings");
+  const read = (text) => { fs.writeFileSync(path.join(dir, "final.md"), text); return finalBlock(dir, "boxie-findings"); };
+  assert.deepEqual(read("x\n```boxie-findings\n[1]\n```\n"), [1]);
+  assert.deepEqual(read("x\n```\nboxie-findings\n[{\"a\": 2}]\n```\n"), [{ a: 2 }], "RakunMiniItems rv46: the name below a bare fence");
+  assert.deepEqual(read("x\n```json\nboxie-findings\n[3]\n```\n"), [3]);
+  assert.equal(read("```boxie-report\n{}\n```\n"), null, "another block is not the findings");
 });
 
 test("loop options: review mode or roles, fresh attempts off or one role, caps", () => {
@@ -161,7 +161,7 @@ function harness(script, env = {}) {
     else if (cmd === "continue" && args.includes("--at")) write(name, { role: roleOf(args[2]), findings: step, verdict: "review" });
     else if (cmd === "check") {
       fs.mkdirSync(path.join(runs, name), { recursive: true });
-      fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).map(([id, e]) => `AGENT-BOX-REPRO ${id} exit ${e}\n`).join(""));
+      fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).map(([id, e]) => `BOXIE-REPRO ${id} exit ${e}\n`).join(""));
     } else write(name, { role: "implement", verdict: step });
   };
   const deps = { delegate, record: () => {}, readAll: () => [], baseSuite: async () => null };

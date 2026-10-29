@@ -26,7 +26,7 @@ The harness runs the test files you changed and checks that they fail on the cur
 
 Besides the usual report block, end your final message with this block:
 
-```agent-box-tests
+```boxie-tests
 {"mode": "red|none", "test_files": ["<paths you created or changed>"],
  "location": [{"file": "<path>", "line": 0, "why": "<what this line does wrong>"}],
  "cases": ["<one line per test: the behaviour it pins>"],

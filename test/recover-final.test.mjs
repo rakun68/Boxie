@@ -16,12 +16,12 @@ const STORE = JSON.parse(fs.readFileSync(path.join(FX, "store.json"), "utf8"));
 
 // The last text event, as final_message in run-task.sh picks it, and its findings block.
 const finalText = (text) => text.split("\n").flatMap((l) => { try { const e = JSON.parse(l); return e.type === "text" ? [e.part.text] : []; } catch { return []; } }).at(-1) ?? "";
-const findings = (t) => JSON.parse(t.match(/```agent-box-findings[^\n]*\n([\s\S]*?)\n\s*```/)[1]);
+const findings = (t) => JSON.parse(t.match(/```boxie-findings[^\n]*\n([\s\S]*?)\n\s*```/)[1]);
 
 test("the real log ends on a step_start, and its last text is the narration, not the findings", () => {
   assert.equal(truncated(EVENTS), true);
   assert.match(finalText(EVENTS), /^I have what I need/);
-  assert.doesNotMatch(finalText(EVENTS), /agent-box-findings/);
+  assert.doesNotMatch(finalText(EVENTS), /boxie-findings/);
 });
 
 test("the missing text and step_finish come back from the store, marked recovered", () => {

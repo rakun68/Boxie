@@ -1,8 +1,8 @@
 # Maturity pass: journal (2026-10-17 onward)
 
-Working checkout: `C:/Workspace/agent-box-dev/agent-box`, branch `harness-mature` (user merges it).
-Project worktrees: `C:/Workspace/agent-box-dev/Lykos` (abdev/master), `.../RakunMiniItems` (abdev/main).
-`agent-box.local.conf` here: AGENT_BOX_NS=dev, AGENT_BOX_SLOTS=2, AGENT_BOX_HERDR=0.
+Working checkout: `C:/Workspace/boxie-dev/boxie`, branch `harness-mature` (user merges it).
+Project worktrees: `C:/Workspace/boxie-dev/Lykos` (abdev/master), `.../RakunMiniItems` (abdev/main).
+`boxie.local.conf` here: BOXIE_NS=dev, BOXIE_SLOTS=2, BOXIE_HERDR=0.
 User rules for this pass: Gemini and DeepSeek free; Opus 4.6 rare (spec review only, a few per bench
 round); 2 slots; target users are cross-platform (Linux/macOS/Windows, Docker and Podman); never push;
 no co-author trailer in commits.
@@ -25,7 +25,7 @@ no co-author trailer in commits.
 
 | # | Item | Status |
 | --- | --- | --- |
-| 1 | Namespace (AGENT_BOX_NS), local conf, prune on build | done 64af04d |
+| 1 | Namespace (BOXIE_NS), local conf, prune on build | done 64af04d |
 | 2 | Model limits in make-config + compaction/prune config | done c14e01a (bench pending) |
 | 3 | `api` lookup tool for dependency jars (JVM), cached index | done c14e01a |
 | 4 | Fix rounds: smaller context (prune or fresh handoff), bench | prune+compaction; bench C pending |
@@ -40,10 +40,10 @@ no co-author trailer in commits.
 
 ## Setup for benches
 
-- `agent-box-base` worktree (branch harness-base = master + namespace commit), NS=base, 1 slot,
+- `boxie-base` worktree (branch harness-base = master + namespace commit), NS=base, 1 slot,
   repos in `repos-base/` (clones, origin fetch = GitHub, push disabled).
-- `agent-box-run` worktree (detached, the commit under test), NS=dev, 2 slots, repos in `repos-dev/`.
-  Edit in `agent-box`, never in `agent-box-run` while it runs; move it with `git checkout --detach`
+- `boxie-run` worktree (detached, the commit under test), NS=dev, 2 slots, repos in `repos-dev/`.
+  Edit in `boxie`, never in `boxie-run` while it runs; move it with `git checkout --detach`
   and rebuild images between benches.
 - Bench C driver: `benchC/pipe.sh <base|dev> <t49|t50>` (same rulings as the E2E after-side).
 
@@ -51,7 +51,7 @@ no co-author trailer in commits.
 
 - 2026-10-17 14:30 smoke (core/feature-report-sort, dev): pass, 265 s, 36 steps, self-check 19 s.
 - Editing delegate.sh during a run: the run's tail executed new text ("syntax error near `)`" at exit).
-  Benches now run from agent-box-run.
+  Benches now run from boxie-run.
 - New namespace: first run seeds the Gradle volumes (12 min for RakunMiniItems), once.
 - OpenCode provider timeouts: headerTimeout/chunkTimeout default 300 s; retry regex covers
   "request/response/stream timeout" but whether the abort errors match is unverified: left alone.
@@ -127,7 +127,7 @@ no co-author trailer in commits.
   unanswered live question) + 7.0.
 - Lykos peak-wrap on the new harness started (Node repo check).
   - e33b0fa+: `--base <sha>` not contained in HEAD bundled HEAD instead ("reference is not a tree"); now a
-    temporary branch refs/heads/agent-box-tmp/base-<run> (a bundle clone takes refs/heads only).
+    temporary branch refs/heads/boxie-tmp/base-<run> (a bundle clone takes refs/heads only).
 - Lykos peak-wrap on e33b0fa+: 17.3 min end to end (9.1 + 8.2), 1 round, 0 blocking -> approve.
 
 ## Retro fixes (2026-10-27, branch retro-fixes)

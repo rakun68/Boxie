@@ -1,6 +1,6 @@
 ---
 name: box-verify
-description: How to verify a change before reporting it done in an agent-box run. Load before your final message whenever you changed code.
+description: How to verify a change before reporting it done in a Boxie run. Load before your final message whenever you changed code.
 ---
 
 # Verify before you report

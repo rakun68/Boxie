@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-box-test-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "boxie-test-"));
 process.on("exit", () => { try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 3 }); } catch { /* gc removes it */ } });
 
 export const tmp = (prefix) => fs.mkdtempSync(path.join(root, prefix));

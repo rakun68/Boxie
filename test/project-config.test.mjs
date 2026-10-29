@@ -1,5 +1,5 @@
 // Per-project settings for stacks beyond Node and Java: failing test names, neighbour sources, test
-// command placeholders, sensitive paths, and any agent-box.conf key overridden in projects/<repo>.env.
+// command placeholders, sensitive paths, and any boxie.conf key overridden in projects/<repo>.env.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -39,7 +39,7 @@ test("the check script, run for real, extracts names with the project's FAIL_REG
     root: r.dir.replace(/\\/g, "/"), failRegex: String.raw`^FAIL: (\S+)` });
   for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(r.dir, f)), { recursive: true }); fs.writeFileSync(path.join(r.dir, f), text); }
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
-  const v = parseVerify(execFileSync("bash", [path.join(r.dir, ".agent-box-verify", "run.sh")], { encoding: "utf8", env }), { exit: 1, fails: ["alpha"] });
+  const v = parseVerify(execFileSync("bash", [path.join(r.dir, ".boxie-verify", "run.sh")], { encoding: "utf8", env }), { exit: 1, fails: ["alpha"] });
   assert.deepEqual(v.neighbours.fails, ["alpha", "beta"]);
   assert.deepEqual(v.neighbours.new_fails, ["beta"]);
   assert.equal(v.neighbours.regression, true);
@@ -67,7 +67,7 @@ test("test command placeholders: {files}, {tests} for Gradle, {dirs} for go test
   assert.equal(fillTestCmd("gradle test {tests}", ["src/test/java/a/FooTest.java"]), "gradle test --tests a.FooTest");
 });
 
-test("project settings: any key overrides agent-box.conf, the OmniRoute key is never read", () => {
+test("project settings: any key overrides boxie.conf, the OmniRoute key is never read", () => {
   const env = projectSettings(["FAIL_REGEX='^FAIL: (\\S+)'", "LOOP_MAX_ROUNDS=2", "OMNIROUTE_API_KEY=secret", "# NOTE=x"].join("\n"));
   assert.deepEqual(env, { FAIL_REGEX: "^FAIL: (\\S+)", LOOP_MAX_ROUNDS: "2" });
   assert.equal(conf("LOOP_MAX_ROUNDS", { env }), "2");

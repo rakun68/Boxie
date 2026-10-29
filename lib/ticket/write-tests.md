@@ -36,7 +36,7 @@ tests: they are the interface contract it builds against.
 
 Besides the usual report block, end your final message with this block:
 
-```agent-box-tests
+```boxie-tests
 {"mode": "red|refactor|none", "test_files": ["<paths you created or changed>"],
  "interface": ["<each function, class or type the tests expect, with its signature>"],
  "seams": ["<where the tests touch the code>"], "cases": ["<one line per test: the behaviour it pins>"],

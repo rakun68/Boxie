@@ -7,7 +7,7 @@ import path from "node:path";
 import { tmp as tempDir } from "./tmp.mjs";
 
 const tmp = tempDir("ab-perr-");
-process.env.AGENT_BOX_LEDGER = path.join(tmp, "events.jsonl");
+process.env.BOXIE_LEDGER = path.join(tmp, "events.jsonl");
 const { finish, providerError, readAll } = await import("../lib/ledger.mjs");
 const { verdictOf, nextOf } = await import("../lib/checks.mjs");
 
