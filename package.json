@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "description": "Host-side helpers for delegate.sh",
+  "license": "MIT",
   "dependencies": {
     "yaml": "2.8.1"
   }
