@@ -163,7 +163,9 @@ Usage: delegate.sh <command> ...
                                  A dir: every .md in it checked together, for gaps between tickets too.
                                  Read-only pass (review-spec-alt, DeepSeek) listing what the task leaves
                                  undecided or where it contradicts its docs, before anyone implements it.
-                                 `run` does it itself for a task with `issue:` (SPEC_CHECK=0 or --no-spec-check: off)
+                                 `run` folds it into the implementer for a task with `issue:`: edits wait
+                                 until it records the check or asks (SPEC_CHECK=session: this session
+                                 first, as with --no-ask; SPEC_CHECK=0 or --no-spec-check: off)
 
 Engine: podman (default) or docker, from BOXIE_ENGINE or boxie.conf. Build once per engine.
 Parallel: at most BOXIE_SLOTS containers at once (default 4); each slot has its own CACHES volumes.
@@ -564,7 +566,7 @@ launch() {
   # so the round's values go to `exec` explicitly (the OmniRoute key is already in it, never on a command line).
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
-    AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S
+    AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S SPEC_GATE
     FREE_FALLBACK TRANSCRIBE_MODEL)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
@@ -795,7 +797,7 @@ cmd_run() {
   local repo="$1" task="$2"; shift 2
   [ -f "$task" ] || die "task file not found: $task"
   load_project "$repo"; need_key
-  local name="" base="HEAD" role="" rulings="" eff="" spec=""
+  local name="" base="HEAD" role="" rulings="" eff="" spec="" SPEC_GATE=0
   MODEL="${DEFAULT_MODEL:-}" EFFORT="" VARIANT="" ALLOW_WEB=0 REVIEW=0 ASK="${ASK:-1}"
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -836,19 +838,25 @@ cmd_run() {
     local ruled; ruled="$(scratch rulings)"
     { cat "$task"; printf '\n\n## The orchestrator'"'"'s rulings (binding)\n\n%s\n' "$rulings"; } >"$ruled"
     task="$ruled"
-  # A ticket (frontmatter `issue:`) gets a spec check first, once: questions stop here, before any code.
+  # A ticket (frontmatter `issue:`) gets a spec check first. Folded into the implementer (known gap 29):
+  # its first step, edits refused until it records the check or asks (image/plugin.js). Without the ask
+  # tool, or with SPEC_CHECK=session, a read-only session of its own whose questions stop here.
   elif [ "${SPEC_CHECK:-1}" != 0 ] && [ "$REVIEW" != 1 ] && [ -z "${LEDGER_BENCH:-}" ] \
      && awk 'NR==1 && $0 != "---" {exit 1} NR>1 && $0 == "---" {exit} /^issue:/ {f=1} END {exit !f}' "$task"; then
-    local sc="${name:-$(date +%Y%m%d-%H%M%S)}-spec" rc=0
-    # A subshell: the check loads the project again, which would reset what this run already parsed.
-    (cmd_spec_check "$repo" "$task" --name "$sc" --base "$base") || rc=$?
-    if [ "$rc" = 4 ]; then
-      echo
-      echo "verdict spec_questions  next answer_spec  (rerun with --rulings \"1: ...; 2: ...\" or --rulings @FILE; --no-spec-check to skip)"
-      exit 4
+    if [ "$ASK" != 0 ] && [ "${SPEC_CHECK:-1}" != session ]; then
+      SPEC_GATE=1
+    else
+      local sc="${name:-$(date +%Y%m%d-%H%M%S)}-spec" rc=0
+      # A subshell: the check loads the project again, which would reset what this run already parsed.
+      (cmd_spec_check "$repo" "$task" --name "$sc" --base "$base") || rc=$?
+      if [ "$rc" = 4 ]; then
+        echo
+        echo "verdict spec_questions  next answer_spec  (rerun with --rulings \"1: ...; 2: ...\" or --rulings @FILE; --no-spec-check to skip)"
+        exit 4
+      fi
     fi
   fi
-  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}"
+  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE
   [ -n "$name" ] || name="$(date +%Y%m%d-%H%M%S)-${role:-$(echo "$MODEL" | tr -c 'a-zA-Z0-9.\n' '-' | cut -c1-30)}"
   launch "$name" "$task" "$base" 0
 }

@@ -3,6 +3,7 @@
 // time (Composer twice broke a file with a whole-file write; research/findings.md §3).
 // Installed as ~/.config/opencode/plugins/boxie.js. Hook shape: research/opencode-customization.md §6.
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 const CHECK = "/opt/boxie/syntax-check.mjs";
 
@@ -16,8 +17,16 @@ function touched(tool, args = {}) {
 // this twice in one bench run (2026-10-12, trivial-low-stock) and needed 4 more steps to recover.
 const READ_DUMP = /^\s*<path>[^\n]*<\/path>\s*\n\s*<type>(?:file|directory)<\/type>/;
 
+// SPEC_GATE=1: no edit before the spec check is recorded or a question asked (image/ask-mcp.mjs writes
+// the file). Known gap 29: the check folded into the implementer instead of a session of its own.
+const SPEC_FILE = () => process.env.SPEC_GATE_FILE || "/out/spec-check.md";
+
 export const Boxie = async ({ directory }) => ({
   "tool.execute.before": async (input, output) => {
+    if (process.env.SPEC_GATE === "1" && ["edit", "write", "apply_patch"].includes(input.tool) && !existsSync(SPEC_FILE()))
+      throw new Error("Rejected: check the task first (the first step in your instructions). Call spec_checked with "
+        + "\"nothing undecided\" or the points the code and docs settle, or ask_orchestrator about a contradiction or open "
+        + "decision. The file was not changed.");
     const text = input.tool === "write" ? output.args?.content : input.tool === "edit" ? output.args?.newString : null;
     if (typeof text === "string" && READ_DUMP.test(text))
       throw new Error("Rejected: this content is the read tool's output (<path>, <type> tags and numbered lines), not file text. "

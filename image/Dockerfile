@@ -20,7 +20,7 @@ RUN mkdir -p /opt/boxie \
 COPY run-task.sh /usr/local/bin/run-task.sh
 COPY api.mjs /usr/local/bin/api
 COPY changed-tests.sh /opt/boxie/changed-tests.sh
-COPY preamble.md preamble-review.md preamble-explore.md preamble-speccheck.md make-config.mjs ask-mcp.mjs progress.mjs syntax-check.mjs last-stop.mjs recover-final.mjs /opt/boxie/
+COPY preamble.md preamble-review.md preamble-explore.md preamble-speccheck.md preamble-specgate.md make-config.mjs ask-mcp.mjs progress.mjs syntax-check.mjs last-stop.mjs recover-final.mjs /opt/boxie/
 COPY plugin.js /home/node/.config/opencode/plugins/boxie.js
 COPY skills/ /home/node/.config/opencode/skills/
 RUN chmod 755 /usr/local/bin/run-task.sh /usr/local/bin/api /opt/boxie/changed-tests.sh \

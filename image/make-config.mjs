@@ -14,6 +14,7 @@
 //   SKILLS_ALLOW comma-separated skill names the agent may load; empty = all. box-* are always allowed
 //   ALLOW_WEB    1 = webfetch allowed
 //   ASK          0 = no ask_orchestrator tool (the worker can still ask with BLOCKED)
+//   SPEC_GATE    1 = workers get spec_checked, and edits wait for it or a question (image/plugin.js)
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -118,6 +119,8 @@ const cfg = {
 // turns it off.
 if (env.ASK !== "0" && (!review || env.REVIEW_ASK === "1")) {
   cfg.mcp = { orchestrator: { type: "local", command: ["node", "/opt/boxie/ask-mcp.mjs"], enabled: true } };
+  // Passed by name: whether OpenCode hands its own env to a local MCP server is not checked here.
+  if (env.SPEC_GATE === "1" && !review) cfg.mcp.orchestrator.environment = { SPEC_GATE: "1" };
 }
 
 const dir = path.join(os.homedir(), ".config", "opencode");

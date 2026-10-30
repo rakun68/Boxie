@@ -202,6 +202,7 @@ or only the matching methods. Use these instead of unzip, javap or find on the c
 short and cached, and source reads faster than bytecode.'
     fi
     prompt="$(printf '%s\n' "$pre"
+              [ "${SPEC_GATE:-0}" = 1 ] && { echo; cat /opt/boxie/preamble-specgate.md; }
               [ -n "$api_note" ] && printf '\n%s\n' "$api_note"
               [ -f /in/context.md ] && { echo; cat /in/context.md; }
               printf '\n# Task\n\n'; cat /in/task.md)"
@@ -606,6 +607,7 @@ jq -n \
   --argjson red "$red_exit" --argjson weak "$weak_spec" --argjson autofix "$autofix" --argjson cut "$cut_resumes" \
   --argjson recovered "$recovered" --argjson selfcheck "$self_checked" --argjson repask "$report_asked" \
   --slurpfile report "$OUT/report.json" \
+  --arg specgate "${SPEC_GATE:-0}" --arg speccheck "$(cat "$OUT/spec-check.md" 2>/dev/null)" \
   --arg blocked "$blocked" --argjson sealed "$(printf '%s\n' "${sealed_touched[@]}" | sort -u | jq -R . | jq -s 'map(select(. != ""))')" \
   '{branch:$branch, base:$base, head:$head, model:$model, fell_back_from:(if $fellback == "" then null else $fellback end), commits:$commits, leftovers_committed:($leftovers==1),
     setup_exit:$setup, agent_exit:$agent, test_exit:$test, first_test_exit:$first_test, seconds:$seconds,
@@ -614,5 +616,6 @@ jq -n \
     review:($review==1), review_violation:$violation, red_exit:$red, weak_spec:$weak, autofix:$autofix, cut_resumes:$cut,
     self_check:($selfcheck == 1), report_asked:($repask == 1), final_recovered:($recovered > 0),
     report:($report[0]), session:(if $session == "" then null else $session end), round:$round, start:$start,
-    questions:{asked:$asked, answered:$answered}}' >"$OUT/summary.json"
+    questions:{asked:$asked, answered:$answered},
+    spec_check:(if $specgate == "1" then $speccheck else null end)}' >"$OUT/summary.json"
 log "done"

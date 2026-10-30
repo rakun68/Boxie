@@ -10,6 +10,11 @@ import path from "node:path";
 
 const QDIR = "/out/questions";
 const ADIR = "/in/answers";
+// SPEC_GATE=1: the implementer checks the task first, and image/plugin.js refuses edits until this
+// file exists. spec_checked writes it; so does a question, since asking is the other way through.
+const SPEC_FILE = process.env.SPEC_GATE_FILE || "/out/spec-check.md";
+const SPEC_GATE = process.env.SPEC_GATE === "1";
+const specNote = (line) => { if (SPEC_GATE) fs.appendFileSync(SPEC_FILE, line.trim() + "\n"); };
 // One line in the harness log, so the live feed (delegate.sh watch, herdr) shows a question the moment
 // it is asked; OpenCode reports the tool call itself only when it returns.
 const note = (msg) => {
@@ -58,6 +63,16 @@ const tools = [
     description: "Keep waiting for the answer to a question you asked with ask_orchestrator.",
     inputSchema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] },
   },
+  ...(SPEC_GATE ? [{
+    name: "spec_checked",
+    description:
+      "Record your check of the task before your first edit: \"nothing undecided\", or each point the code or docs settle, with the deciding path:line. Edits are refused until you call this or ask_orchestrator. A contradiction or a decision the task leaves open goes to ask_orchestrator instead.",
+    inputSchema: {
+      type: "object",
+      properties: { result: { type: "string", description: "\"nothing undecided\", or one line per point: the point, your reading, path:line" } },
+      required: ["result"],
+    },
+  }] : []),
 ];
 
 async function call(name, args) {
@@ -66,12 +81,20 @@ async function call(name, args) {
     const id = ids.length ? Math.max(...ids) + 1 : 1;
     fs.writeFileSync(path.join(QDIR, `${id}.md`), String(args.question || "").trim() + "\n");
     note(`question ${id}: ${String(args.question || "")}`);
+    specNote(`asked: question ${id}`);
     return `Question ${id} sent.\n\n` + (await waitFor(id));
   }
   if (name === "wait_for_answer") {
     const id = Number(args.id);
     if (!fs.existsSync(path.join(QDIR, `${id}.md`))) return `There is no question ${id}.`;
     return waitFor(id);
+  }
+  if (name === "spec_checked" && SPEC_GATE) {
+    const result = String(args.result || "").trim();
+    if (!result) return "Give the result: \"nothing undecided\", or the points with their basis.";
+    specNote(`checked: ${result}`);
+    note(`spec check: ${result}`);
+    return "Recorded. Edits are open now.";
   }
   throw new Error(`unknown tool ${name}`);
 }

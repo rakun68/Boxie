@@ -183,12 +183,14 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
 4. Non-trivial change, or anything touching the gate, ledger, containment or credentials:
    `loop <repo> <run> [--spec FILE]` (in the background). It refuses a run with no sealed acceptance
    test: write one in step 1 (`--no-spec` only for a pure refactor or docs). Before implementing, the
-   spec check lists what the task leaves undecided or where it contradicts its docs, issue, sealed
-   tests or code (DeepSeek, read-only, a few minutes). `run` does it by itself for a task with
-   `issue:`; for any other non-trivial task run `spec-check <repo> <task.md> [--base REF]` yourself.
-   Points found → `run` stops with `next answer_spec` before any code: rule on every point at once
-   and rerun with `--rulings "1: ...; 2: ..."` (or `@FILE`); the rulings join the task, binding for
-   the worker and every reviewer. `--no-spec-check` skips it. (RakunMiniItems #49: the task asked for
+   spec check finds what the task leaves undecided or where it contradicts its docs, issue, sealed
+   tests or code. For a task with `issue:` the implementer does it as its first step: edits are
+   refused until it records "nothing undecided" (`spec_check` in the summary) or asks you through
+   `ask_orchestrator`. Answer with `answer` (`wait --questions` shows them); the answer is binding.
+   For any other non-trivial task, or with `--no-ask`, run `spec-check <repo> <task.md> [--base REF]`
+   (DeepSeek, read-only, a few minutes; `SPEC_CHECK=session` makes `run` do this instead). Points
+   found → rule on every point at once and rerun with `--rulings "1: ...; 2: ..."` (or `@FILE`); the
+   rulings join the task, binding for the worker and every reviewer. `--no-spec-check` skips both. (RakunMiniItems #49: the task asked for
    a listener ADR 0003 gives to MythicLib; the check flags it, the review loop found it after the code.)
    Round 1, the only full review, by the project's review mode: `split`, review-spec (Opus) and
    review-std (free DeepSeek); `both`, one review-both (paid DeepSeek high) covering both axes. Every reviewer gets

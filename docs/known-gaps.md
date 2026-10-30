@@ -377,3 +377,10 @@ P18 regrill (2026-10-31) merged the two: the implementer does the check as its f
 "nothing undecided" or ask through `ask_orchestrator` (BLOCKED for what it cannot decide alone), and
 the harness refuses edits until it has. One session instead of two; the forced step keeps the
 question from being guessed away. Measure both forms on the same tasks before removing `spec-check`.
+
+**Fixed.** `run` on a task with `issue:` gives the implementer the check as its first step
+(`image/preamble-specgate.md`) and a `spec_checked` tool; `image/plugin.js` refuses edit, write and
+patch until `spec_checked` or `ask_orchestrator` has written `/out/spec-check.md`. The summary keeps
+what it recorded (`spec_check`). The session form stays: `spec-check <dir>` for a whole ticket set,
+`SPEC_CHECK=session` on `run`, and `run --no-ask` (no tool to ask with). A write through `bash` is not
+gated. The comparison of both forms on the same tasks is not run yet: unmeasured.
