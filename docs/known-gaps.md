@@ -366,3 +366,14 @@ untested. The orchestrator decides from the change's risk (user, 2026-10-29); no
 
 **Fixed.** A regression in the tests next to the change is run once more; only tests that fail
 both times count. A flake is logged (`flaky` in progress.jsonl).
+
+### 29. The spec check is a session of its own
+
+**Seen.** `run` on a task with `issue:` starts a separate read-only spec-check session (DeepSeek, a
+few minutes) before the implementer, which then reads the same task, issue and docs again. The Lykos
+P18 regrill (2026-10-31) merged the two: the implementer does the check as its first step.
+
+**Open.** Fold the spec check into the implementer: before its first write it must either record
+"nothing undecided" or ask through `ask_orchestrator` (BLOCKED for what it cannot decide alone), and
+the harness refuses edits until it has. One session instead of two; the forced step keeps the
+question from being guessed away. Measure both forms on the same tasks before removing `spec-check`.
