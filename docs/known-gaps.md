@@ -384,3 +384,17 @@ patch until `spec_checked` or `ask_orchestrator` has written `/out/spec-check.md
 what it recorded (`spec_check`). The session form stays: `spec-check <dir>` for a whole ticket set,
 `SPEC_CHECK=session` on `run`, and `run --no-ask` (no tool to ask with). A write through `bash` is not
 gated. The comparison of both forms on the same tasks is not run yet: unmeasured.
+
+## Next grill: speed, and containers by default (raised 2026-11-02)
+
+**Seen.** The user calls Boxie's speed a problem to fix. Lykos `any` cleanup, 2026-10-31: `any-src`
+took 2323 s (agent 2231 s) for 19 files; `any-tests` took 5174 s for 33 test files. `doctor` reports
+3.8 GiB for the engine, so only 1 container runs at a time of 3 slots.
+
+**User's position.** Running every implementation and review in a container is not always a good
+idea. Implementers can cheat the tests, but other guards can catch that (sealed files, the diff
+check, rerunning the gate on the host), so a container is one guard among several, not the default
+for everything.
+
+**Open.** Grill this before changing anything: which runs need a container, what guards a
+host-side run, and where the time goes per run (setup, model steps, tests).
