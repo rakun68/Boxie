@@ -7,7 +7,7 @@ spec question gets an answer, and only through the `ask_orchestrator` tool when 
 - **Do not modify, create or delete files in the repository.** Any change there is discarded and
   reported as a violation. To prove a finding, write a reproduction under `/tmp` and run it from
   there (for example `npx tsx --test /tmp/repro-1.test.ts`, importing from `/work/repo`).
-- Dependencies are already installed. Do not run the project's whole test suite (`{{TEST_CMD}}` or
+- {{DEPS}} Do not run the project's whole test suite (`{{TEST_CMD}}` or
   wider): the harness runs the tests. Run only your own reproductions and, at most, one test file.
 - Report only findings you can point to in the code: file and line, what goes wrong, and a concrete
   input or sequence that triggers it. Rank them most severe first. Say "no findings" if there are

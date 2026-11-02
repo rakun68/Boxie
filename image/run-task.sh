@@ -143,6 +143,14 @@ if [ -f package-lock.json ] && [ "${SETUP_CMD:-npm ci --no-audit --no-fund}" = "
     rm -f node_modules/.boxie-stamp; SETUP_CMD="npm ci --no-audit --no-fund"
   fi
 fi
+# A review reads a diff: it needs dependencies only to run its own reproductions. REVIEW_SETUP=0 skips
+# setup (advise mode does), and a failed setup never stops a review: it goes on without them. AACR-Bench
+# cline (2026-11-02): `npm ci` failed and the review never started.
+deps=installed review_setup_exit=0
+if [ "${REVIEW:-0}" = 1 ] && [ "${REVIEW_SETUP:-1}" = 0 ]; then
+  [ -n "$SETUP_CMD" ] && log "setup skipped: a review with REVIEW_SETUP=0"
+  SETUP_CMD="" deps=skipped
+fi
 if [ -n "$SETUP_CMD" ]; then
   log "setup: $SETUP_CMD"
   bash -lc "$SETUP_CMD" >"$OUT/setup.log" 2>&1; setup_exit=$?
@@ -156,6 +164,9 @@ if [ -n "$SETUP_CMD" ]; then
   log "setup exit $setup_exit"
   [ "$nm_cache" = 1 ] && [ "$setup_exit" = 0 ] && nm_stamp >node_modules/.boxie-stamp
   [ "$setup_exit" = 0 ] || log "setup failed: \`$SETUP_CMD\` exited $setup_exit: $(tail -n 3 "$OUT/setup.log" | tr '\n' ' ' | cut -c1-300)"
+  if [ "$setup_exit" != 0 ] && [ "${REVIEW:-0}" = 1 ]; then
+    log "reviewing without dependencies"; review_setup_exit=$setup_exit setup_exit=0 deps=failed
+  fi
 fi
 setup_s=$(( $(date +%s) - t0 ))
 
@@ -190,6 +201,9 @@ elif [ "${SKIP_AGENT:-0}" != "1" ] && [ "$setup_exit" = 0 ]; then
   else
     # Quoted replacements: a test command may hold |, & or backslashes (bash 5.2 patsub_replacement).
     pre="$(cat "$preamble")"; pre="${pre//\{\{BRANCH\}\}/"$BRANCH"}"; pre="${pre//\{\{TEST_CMD\}\}/"$TEST_CMD"}"
+    deps_line="Dependencies are already installed."
+    [ "$deps" != installed ] && deps_line="Dependencies are **not** installed$([ "$deps" = failed ] && echo " (setup failed)"): do not install them. Read the code. A reproduction that needs the project's packages cannot run here: report that finding PLAUSIBLE, with its reproduction for the harness to run."
+    pre="${pre//\{\{DEPS\}\}/"$deps_line"}"
     # JVM dependencies in the build caches: the `api` tool (image/api.mjs) answers signature questions.
     api_note=""
     if [ -d ~/.gradle/caches/modules-2/files-2.1 ] || [ -d ~/.m2/repository ]; then
@@ -228,7 +242,10 @@ short and cached, and source reads faster than bytecode.'
   # The prompt goes in on stdin: `opencode run` reads it there when stdin is not a terminal (1.19.4).
   # As an argument, Linux caps it at 128 KB (MAX_ARG_STRLEN): a 146 KB council prompt failed with
   # "Argument list too long" (Lykos P18, 2026-10-28).
-  timeout --kill-after=30 "${TIMEOUT_MIN}m" \
+  # A review keeps REVIEW_REPORT_MIN of its time for the report turn after a cut (3a).
+  agent_min="$TIMEOUT_MIN"
+  [ "${REVIEW:-0}" = 1 ] && [ "$TIMEOUT_MIN" -gt $(( 2 * ${REVIEW_REPORT_MIN:-5} )) ] && agent_min=$(( TIMEOUT_MIN - ${REVIEW_REPORT_MIN:-5} ))
+  timeout --kill-after=30 "${agent_min}m" \
     opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" \
     <"$OUT/prompt.md" >"$OUT/events.jsonl" 2>"$OUT/opencode.log"
   agent_exit=$?
@@ -297,6 +314,27 @@ final_message() {
 }
 [ -s "$OUT/events.jsonl" ] && final_message
 session_id="$(jq -r 'select(.sessionID) | .sessionID' "$OUT/events.jsonl" 2>/dev/null | tail -n 1)"
+
+# 3a. A review stopped at its time limit gets one short turn to write the findings it has. The verdict
+#     stays timeout (incomplete), but the findings are kept. AACR-Bench react (2026-11-02): 147 tool
+#     calls, then the timeout, and nothing to show for them. Attached, the server is still running the
+#     turn: it is aborted first (OpenCode 1.19.4, POST /session/:id/abort).
+review_cut=""
+if [ "${REVIEW:-0}" = 1 ] && { [ "$agent_exit" = 124 ] || [ "$agent_exit" = 137 ]; } && [ -n "$session_id" ] \
+   && [ "${REVIEW_REPORT_MIN:-5}" -gt 0 ]; then
+  review_cut=timeout
+  phase report
+  [ -n "$serve_pid" ] && curl -fs -m 10 -X POST "http://127.0.0.1:4096/session/$session_id/abort" >/dev/null 2>&1
+  log "review hit its time limit: asking $session_id for the findings so far"
+  t0=$(date +%s)
+  timeout --kill-after=30 "${REVIEW_REPORT_MIN:-5}m" \
+    opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" --session "$session_id" --title "$BRANCH" \
+    'Time is up. Do not read or run anything more. Write your review now from what you have found so far, ending with the `boxie-findings` block (`[]` when you found nothing).' \
+    >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
+  log "report turn exit $?"
+  agent_s=$(( agent_s + $(date +%s) - t0 ))
+  final_message
+fi
 
 # 3b. A turn cut off at the output cap (step_finish reason "length", usually from thinking) ends the
 #     run with no edit. Resume the same session, up to CUT_RESUMES times, and ask for edits.
@@ -600,7 +638,7 @@ jq -n \
   --argjson commits "$commits" --argjson leftovers "$leftovers" \
   --argjson setup "$setup_exit" --argjson agent "$agent_exit" --argjson test "$test_exit" --argjson first_test "$first_test_exit" \
   --argjson seconds "$(( $(date +%s) - started ))" --argjson setup_s "$setup_s" --argjson agent_s "$agent_s" --argjson test_s "$test_s" \
-  --argjson review "${REVIEW:-0}" --argjson violation "$review_violation" \
+  --argjson review "${REVIEW:-0}" --argjson violation "$review_violation" --arg deps "$deps" --argjson rsetup "$review_setup_exit" --arg cutby "$review_cut" \
   --argjson asked "$(ls /out/questions 2>/dev/null | grep -cE '^[0-9]+\.md$')" \
   --argjson answered "$(ls /out/questions 2>/dev/null | grep -cE '^[0-9]+\.answer\.md$')" \
   --arg session "${session_id:-}" --argjson round "${ROUND:-1}" --arg start "$START_SHA" \
@@ -613,7 +651,7 @@ jq -n \
     setup_exit:$setup, agent_exit:$agent, test_exit:$test, first_test_exit:$first_test, seconds:$seconds,
     phase_seconds:{setup:$setup_s, agent:$agent_s, test:$test_s},
     blocked:(if $blocked == "" then null else $blocked end), sealed_violation:$sealed,
-    review:($review==1), review_violation:$violation, red_exit:$red, weak_spec:$weak, autofix:$autofix, cut_resumes:$cut,
+    review:($review==1), review_violation:$violation, deps:$deps, review_setup_exit:$rsetup, review_cut:(if $cutby == "" then null else $cutby end), red_exit:$red, weak_spec:$weak, autofix:$autofix, cut_resumes:$cut,
     self_check:($selfcheck == 1), report_asked:($repask == 1), final_recovered:($recovered > 0),
     report:($report[0]), session:(if $session == "" then null else $session end), round:$round, start:$start,
     questions:{asked:$asked, answered:$answered},

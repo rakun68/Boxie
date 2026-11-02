@@ -59,8 +59,10 @@ test("review relaunches delegate.sh by its absolute path, also when called as a 
   fs.writeFileSync(env, "OMNIROUTE_API_KEY=\n");
   const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
   try {
-    execFileSync("bash", ["delegate.sh", "review", dir, "agent/x", "--roles", "review-spec"],
+    // The review never finishes, so delegate.sh exits 3.
+    const r = spawnSync("bash", ["delegate.sh", "review", dir, "agent/x", "--roles", "review-spec"],
       { cwd: BOX, encoding: "utf8", stdio: "pipe", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
+    assert.equal(r.status, 3, r.stderr);
     const log = fs.readdirSync(runs).filter((f) => /^\.rv-.*-review-spec\.log$/.test(f)).map((f) => fs.readFileSync(path.join(runs, f), "utf8")).join("");
     assert.doesNotMatch(log, /command not found/);
     assert.match(log, /OMNIROUTE_API_KEY is empty/, "the relaunched run started and reached its own checks");

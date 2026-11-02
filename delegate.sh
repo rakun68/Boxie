@@ -567,7 +567,7 @@ launch() {
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
     AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S SPEC_GATE
-    FREE_FALLBACK TRANSCRIBE_MODEL)
+    FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then
@@ -856,7 +856,7 @@ cmd_run() {
       fi
     fi
   fi
-  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE
+  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}"
   [ -n "$name" ] || name="$(date +%Y%m%d-%H%M%S)-${role:-$(echo "$MODEL" | tr -c 'a-zA-Z0-9.\n' '-' | cut -c1-30)}"
   launch "$name" "$task" "$base" 0
 }
@@ -1356,9 +1356,15 @@ cmd_review() {
   done
   wait
   table "$BOX/runs/$PROJECT" "${names[@]}"
+  local unfinished=0
   for n in "${names[@]}"; do
     echo; echo "################ $n"; cat "$BOX/runs/$PROJECT/$n/final.md" 2>/dev/null || echo "(no final message)"
+    grep -q '^verdict review ' "$BOX/runs/$PROJECT/$n/verdict.txt" 2>/dev/null || unfinished=$((unfinished + 1))
   done
+  # A review that did not finish exits 3: a script reading only the exit code logged two failed AACR-Bench
+  # reviews (setup_failed, timeout) as success (2026-11-02).
+  for n in "${names[@]}"; do echo "$n: $(cat "$BOX/runs/$PROJECT/$n/verdict.txt" 2>/dev/null || echo "no verdict")"; done
+  [ "$unfinished" = 0 ] || return 3
 }
 
 # Ledger: reasons and decisions. note labels why something failed; accept/reject/merged/discard record
