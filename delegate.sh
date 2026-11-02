@@ -856,6 +856,9 @@ cmd_run() {
       fi
     fi
   fi
+  # A review without setup builds nothing: REVIEW_MEMORY (default 2g) instead of MEMORY's 8g, so two
+  # fit beside each other in a 3.8 GiB engine where 8g caps let only one run.
+  [ "$REVIEW" = 1 ] && [ "${REVIEW_SETUP:-1}" = 0 ] && MEMORY="${REVIEW_MEMORY:-2g}"
   export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}"
   [ -n "$name" ] || name="$(date +%Y%m%d-%H%M%S)-${role:-$(echo "$MODEL" | tr -c 'a-zA-Z0-9.\n' '-' | cut -c1-30)}"
   launch "$name" "$task" "$base" 0
