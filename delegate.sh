@@ -13,6 +13,9 @@ SELF=(bash "$BOX/delegate.sh")
 [ -f "$BOX/boxie.conf" ] && . "$BOX/boxie.conf"
 [ -f "$BOX/boxie.local.conf" ] && . "$BOX/boxie.local.conf"
 ENGINE="${BOXIE_ENGINE:-podman}"
+# lib/phase.mjs (status) and lib/stats/live.mjs read the engine from the environment: an engine set in
+# boxie.conf reached neither, and both ran podman.
+export BOXIE_ENGINE="$ENGINE"
 case "$ENGINE" in docker|podman) ;; *) echo "boxie: unknown engine $ENGINE" >&2; exit 1 ;; esac
 # Namespace: a second checkout (a worktree, a test install) sets BOXIE_NS so its images, containers,
 # cache volumes and herdr workspace never collide with the first one's. Empty: the plain names.
@@ -469,7 +472,9 @@ launch() {
   local start_sha="$base_sha"; [ -n "${ORIG_BASE:-}" ] && base_sha="$ORIG_BASE"
   [ -n "$(git -C "$REPO" status --porcelain)" ] && echo "boxie: note: uncommitted changes in $REPO are NOT sent; base is $base_sha" >&2
   local bundle_ref="$base" tmp_ref=""
-  if [ "$base" != "HEAD" ] && ! git -C "$REPO" show-ref --quiet "$base"; then
+  # Only a local branch bundles as itself: a clone of a bundle takes refs/heads, so origin/main or a tag
+  # gave an empty clone and a checkout failure (exit 11).
+  if [ "$base" != "HEAD" ] && ! git -C "$REPO" show-ref --quiet --verify "refs/heads/${base#refs/heads/}"; then
     # A bare commit (a sha, HEAD~2): bundled through a temporary branch (a clone of a bundle takes refs/heads only). Bundling HEAD instead lost a base
     # that HEAD does not contain ("reference is not a tree", Lykos peak-wrap, 2026-10-17).
     if git -C "$REPO" merge-base --is-ancestor "$start_sha" HEAD 2>/dev/null; then bundle_ref="HEAD"
@@ -699,7 +704,7 @@ slot_acquire() {
         fi
         for i in $order; do
           if mkdir "$d/$i" 2>/dev/null; then
-            echo "$ $1 ${PROJECT:-}" >"$d/$i/owner"; echo "$mem" >"$d/$i/mem"; SLOT="$d/$i"; [ "$i" = "$want" ] && SLOT_PREFERRED=1
+            echo "$$ $1 ${PROJECT:-}" >"$d/$i/owner"; echo "$mem" >"$d/$i/mem"; SLOT="$d/$i"; [ "$i" = "$want" ] && SLOT_PREFERRED=1
             slot_unlock "$d"; return 0
           fi
         done
@@ -1137,7 +1142,8 @@ cmd_wait() {
   local -A shown=()
   ended() {
     local d="$runs/_loops/$1"
-    if [ -f "$d/progress.jsonl" ]; then tail -n 1 "$d/progress.jsonl" | grep -q '"ev":"end"'; return; fi
+    # The base suite runs beside the loop and may log its "done" after the loop's "end".
+    if [ -f "$d/progress.jsonl" ]; then grep -v '"what":"basesuite"' "$d/progress.jsonl" | tail -n 1 | grep -q '"ev":"end"'; return; fi
     d="$runs/$1"
     [ -d "$d" ] || return 1
     run_over "$d" && return 0
@@ -1386,6 +1392,8 @@ cmd_review() {
       fi
     fi
     # --effort: a model whose effort is fixed (antigravity Claude) keeps its own, with a warning.
+    # Advise parts read, they do not search: medium effort. On high, steps of 50-125 s were common.
+    [ "$kind" = advise ] && [ -z "$effort" ] && [ -n "${REVIEW_PART_EFFORT:-medium}" ] && effort="${REVIEW_PART_EFFORT:-medium}"
     if [ -n "$effort" ] && [[ "$r" != *@* ]]; then
       if (role_model "$b" "$effort") 2>/dev/null; then r="$r@$effort"; else echo "boxie: $b keeps its own effort: $effort refused for its model" >&2; fi
     fi
@@ -1597,8 +1605,10 @@ cmd_batch() {
   load_project "$repo"
   herdr_ok && herdr_ws >/dev/null
   local stamp names=() t n; stamp="$(date +%Y%m%d-%H%M%S)"
+  local k=0
   for t in "${tasks[@]}"; do
-    n="b$stamp-$(basename "$t" .md | tr -c 'a-zA-Z0-9\n' '-' | cut -c1-30)"
+    # The index keeps two spec.md files (or names alike in their first 30 characters) apart.
+    k=$((k + 1)); n="b$stamp-$k-$(basename "$t" .md | tr -c 'a-zA-Z0-9\n' '-' | cut -c1-30)"
     "${SELF[@]}" run "$repo" "$t" --name "$n" "${passthru[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     names+=("$n"); sleep 2
   done
@@ -1773,12 +1783,14 @@ check_args() {
     for t in "${toks[@]:${#words[@]}}"; do case "$t" in "<"*) want=$((want + 1)) ;; *) break ;; esac; done
   fi
   [ "$n" -ge "$want" ] && return 0
-  { usage_of "$c" | grep . || echo "usage: delegate.sh $c <repo> <file> ..."; } >&2
+  { usage_of "$c" | grep . || echo "delegate.sh $c needs $want argument(s): see docs/commands.md"; } >&2
   exit 2
 }
 case "${1:-}" in
   ticket|feature|defect|hunt) check_args "$1" $(($# - 1)) 2 ;;
-  ticket-review|land) check_args "$1" $(($# - 1)) 1 ;;
+  ticket-review|land|batch) check_args "$1" $(($# - 1)) 1 ;;
+  # No usage line to count from: `accept` alone died with "$2: unbound variable".
+  note|refs|accept|reject|merged|discard|explore|check) check_args "$1" $(($# - 1)) 2 ;;
   loop) if [ "${2:-}" = resume ]; then check_args "loop resume" $(($# - 2)); else check_args loop $(($# - 1)); fi ;;
   ?*) check_args "$1" $(($# - 1)) ;;
 esac

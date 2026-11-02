@@ -90,3 +90,15 @@ test("stop removes the named run's container, and a loop's rounds and base suite
   assert.doesNotMatch(out, /other|Lx/);
   assert.match(bash(`${pre}; cmd_stop lykos nope`), /no container of lykos matches nope/);
 });
+
+// b41fc96 (2026-10-29) wrote a literal "$" as the owner's pid: every launch then took a held slot for
+// dead and removed it, so two runs shared one slot and its caches.
+test("slot_acquire: a held slot stays held; the next launch takes another", () => {
+  const box = tmp("ab-slot-");
+  const out = bash(`${fns("slot_acquire")}
+mem_room() { return 0; }; slot_lock() { return 0; }; slot_unlock() { :; }
+BOX='${unix(box)}' BOXIE_SLOTS=2 PROJECT=p
+slot_acquire first "" 0; a="$SLOT"; slot_acquire second "" 0; b="$SLOT"
+read -r pid _ <"$a/owner"; echo "\${a##*/} \${b##*/} $([ "$pid" = "$$" ] && echo own)"`);
+  assert.equal(out, "1 2 own");
+});
