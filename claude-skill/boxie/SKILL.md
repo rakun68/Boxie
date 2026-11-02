@@ -238,7 +238,9 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
    useful comment (defects, performance, maintainability), the diff split into parts reviewed side by
    side, no setup, no reproductions, then a filter call. `--roles review-both-ocr` runs open-code-review
    on the host instead (fast, no container); both roles in one `--roles` list give two independent
-   reviews. Advise findings are PLAUSIBLE until you check them: never forward one to a fixer unread.
+   reviews, merged into `runs/<project>/<name>-merged.json`. AACR-Bench, 5 PRs (2026-11-02): advise
+   F1 0.296 in about 450 s, OCR 0.290 in about 220 s, both merged 0.315 (most issues covered).
+   Advise findings are PLAUSIBLE until you check them: never forward one to a fixer unread.
 
 **Your own room.** The harness is deterministic so you are not the bottleneck, not so you stay out.
 Use your judgement wherever it pays: read any diff, probe the code, run tests, start your own Claude
