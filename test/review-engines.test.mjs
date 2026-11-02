@@ -170,3 +170,8 @@ test("ocr: a newline-separated path list keeps paths with spaces whole", async (
   assert.deepEqual(splitPaths("a b"), ["a", "b"]);
   assert.deepEqual(splitPaths(""), []);
 });
+
+test("fanout: a findings block with a raw tab inside a string still parses", () => {
+  const t = "```boxie-findings\n[{\"issue\": \"x\", \"existing_code\": \"\tcode\"}]\n```";
+  assert.deepEqual(findingsOf(t), [{ issue: "x", existing_code: "\tcode" }]);
+});

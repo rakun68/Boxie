@@ -26,8 +26,13 @@ const BLOCK = /```[^\n`]*?(?:\r?\n[ \t]*)?boxie-findings[^\n]*\n([\s\S]*?)\n\s*`
 export function findingsOf(text) {
   const m = String(text ?? "").match(BLOCK);
   const tries = m ? [m[1]] : [...String(text ?? "").matchAll(/```(?:json)?[ \t]*\r?\n([\s\S]*?)\n\s*```/g)].map((x) => x[1]).reverse();
+  // A raw tab or newline inside a string (existing_code copied verbatim) is invalid JSON: escaped, then
+  // parsed again (cline part 1, 2026-11-02: one finding lost to "Bad control character").
+  const escaped = (t) => t.replace(/"(?:[^"\\]|\\.)*"/g, (s) => s.replace(/[\u0000-\u001f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`));
   for (const t of tries) {
-    try { const v = JSON.parse(t); if (Array.isArray(v)) return v; if (Array.isArray(v?.findings)) return v.findings; } catch { /* next */ }
+    for (const u of [t, escaped(t)]) {
+      try { const v = JSON.parse(u); if (Array.isArray(v)) return v; if (Array.isArray(v?.findings)) return v.findings; } catch { /* next */ }
+    }
   }
   return null;
 }
