@@ -51,11 +51,13 @@ export function parseScores(text) {
 }
 
 // {kept, dropped, error}: each kept finding carries filter_score.
-export async function filter(findings, diff, { model, base, key, min = 3, timeoutMs = 120000, fetchImpl = fetch } = {}) {
+export async function filter(findings, diff, { model, base, key, min = 3, effort = "low", timeoutMs = 120000, fetchImpl = fetch } = {}) {
   if (!findings.length) return { kept: findings, dropped: [], error: null };
   try {
     const r = await fetchImpl(`${base}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: filterPrompt(findings, diff) }] }),
+      // Low reasoning: on this rubric Gemini's default thinking ran past 300 s; low answered in 6 s (vllm
+      // smoke, 2026-11-02). The scoring is a reading task, not a search.
+      body: JSON.stringify({ model, reasoning_effort: effort, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: filterPrompt(findings, diff) }] }),
       signal: AbortSignal.timeout(timeoutMs) });
     const j = await r.json();
     const scores = parseScores(j.choices?.[0]?.message?.content);

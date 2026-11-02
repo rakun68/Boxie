@@ -160,7 +160,7 @@ export async function main() {
   // Only a cut part with no readable findings makes the whole a timeout (vllm smoke, 2026-11-02).
   if (results.some((r) => r.cut && r.findings === null)) return 124;
   // A part that wrote no readable block and ran fine is still a review: its prose is in final.md.
-  return results.every((r) => r.exit === 0) ? 0 : 1;
+  return results.every((r) => r.exit === 0 || (r.cut && r.findings !== null)) ? 0 : 1;
 }
 
 if (process.argv[1] && path.basename(process.argv[1]) === "fanout.mjs") main().then((c) => process.exit(c), (e) => { console.error(e); process.exit(1); });
