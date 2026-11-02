@@ -163,3 +163,10 @@ test("filter: the prompt carries only the diffs of the files the findings name",
   assert.match(p, /\+one/);
   assert.doesNotMatch(p, /\+two/);
 });
+
+test("ocr: a newline-separated path list keeps paths with spaces whole", async () => {
+  const { splitPaths } = await import("../lib/ocr.mjs");
+  assert.deepEqual(splitPaths("docs/My File.md\nsrc"), ["docs/My File.md", "src"]);
+  assert.deepEqual(splitPaths("a b"), ["a", "b"]);
+  assert.deepEqual(splitPaths(""), []);
+});

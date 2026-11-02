@@ -1328,7 +1328,10 @@ cmd_review() {
   # The prefix too: phase-review starts one review per area in the same second.
   local tdir="$BOX/runs/$PROJECT/.review-$stamp${prefix:+-$prefix}"; mkdir -p "$tdir"
   local body="$tdir/body.md" origin="$BOX/runs/$PROJECT/${branch#agent/}/task-body.md" f
-  local pspec=(); [ -z "$paths" ] || mapfile -t pspec < <(tr ' ' '\n' <<<"$paths" | grep -v '^$')
+  # One pathspec per line when the list has a newline (phase-review sends that: a path may hold a space).
+  local pspec=()
+  if [[ "$paths" == *$'\n'* ]]; then mapfile -t pspec < <(grep -v '^$' <<<"$paths")
+  elif [ -n "$paths" ]; then mapfile -t pspec < <(tr ' ' '\n' <<<"$paths" | grep -v '^$'); fi
   kind="${kind:-${REVIEW_KIND:-gate}}"
   [ "$kind" = gate ] || [ "$kind" = advise ] || die "REVIEW_KIND is gate or advise, not $kind"
   # Advise: the parts every reviewer of this round takes (lib/bundle.mjs), with open-code-review's
@@ -1423,7 +1426,7 @@ cmd_review() {
     # A role whose model is ocr:<model> runs open-code-review on the host (lib/ocr.mjs), no container.
     if [[ "${!rvar:-}" == ocr:* ]]; then
       local om="${!rvar%% *}"
-      ocr_review "$n" "${om#ocr:}" "$r" "$base" "$branch" "$tdir/task-${r/@/-}.md" "${pspec[*]}" "$origin" "${specs[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+      ocr_review "$n" "${om#ocr:}" "$r" "$base" "$branch" "$tdir/task-${r/@/-}.md" "$(printf '%s\n' "${pspec[@]}")" "$origin" "${specs[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     elif [ "$kind" = advise ]; then
       # REVIEW_PART_STEPS caps each part's session; open-code-review's groups used 31-98 tool calls a PR.
       BUNDLES_FILE="$bundles" REVIEW_SETUP=0 REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" \
@@ -1783,7 +1786,7 @@ check_args() {
     for t in "${toks[@]:${#words[@]}}"; do case "$t" in "<"*) want=$((want + 1)) ;; *) break ;; esac; done
   fi
   [ "$n" -ge "$want" ] && return 0
-  { usage_of "$c" | grep . || echo "delegate.sh $c needs $want argument(s): see docs/commands.md"; } >&2
+  { usage_of "$c" | grep . || echo "usage: delegate.sh $c: needs $want argument(s), see docs/commands.md"; } >&2
   exit 2
 }
 case "${1:-}" in

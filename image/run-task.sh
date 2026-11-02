@@ -275,9 +275,11 @@ short and cached, and source reads faster than bytecode.'
       fb_args=(--session "$fb_sid")
       fb_msg="The previous model hit a usage limit; you replace it. Continue the task from where the session stands."
     else fb_args=("${session_args[@]}") fb_msg="$prompt"; fi
+    # On stdin like the first try (the 128 KB argument cap), within the time left.
+    fb_min=$(( agent_min - ( $(date +%s) - t0 ) / 60 )); [ "$fb_min" -ge 2 ] || fb_min=2
     t0=$(date +%s)
-    timeout --kill-after=30 "${TIMEOUT_MIN}m" \
-      opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${fb_args[@]}" --title "$BRANCH" "$fb_msg" \
+    printf '%s\n' "$fb_msg" | timeout --kill-after=30 "${fb_min}m" \
+      opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${fb_args[@]}" --title "$BRANCH" \
       >>"$OUT/events.jsonl" 2>>"$OUT/opencode.log"
     agent_exit=$?
     agent_s=$(( agent_s + $(date +%s) - t0 ))
