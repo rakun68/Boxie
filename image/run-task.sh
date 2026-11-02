@@ -81,7 +81,9 @@ prep() {
   node /opt/boxie/make-config.mjs >/tmp/prep.agent || { echo config >/tmp/prep.status; return; }
   # A local OpenCode server, so `delegate.sh tui` (herdr) can attach the real OpenCode TUI to this
   # worker's session. The worker's `run` talks to it; without it, `run` starts its own in-process.
-  if [ "${TUI:-0}" = 1 ]; then
+  # A review in parts always has one: parallel in-process runs share one SQLite database and fail with
+  # "database is locked" (AACR vllm smoke, 2026-11-02: 2 of 3 parts exited 1 within a second).
+  if [ "${TUI:-0}" = 1 ] || { [ "${REVIEW:-0}" = 1 ] && [ -f /in/bundles.json ]; }; then
     opencode serve --hostname 127.0.0.1 --port 4096 >"$OUT/serve.log" 2>&1 &
     echo $! >/tmp/prep.serve
   fi
@@ -245,10 +247,20 @@ short and cached, and source reads faster than bytecode.'
   # A review keeps REVIEW_REPORT_MIN of its time for the report turn after a cut (3a).
   agent_min="$TIMEOUT_MIN"
   [ "${REVIEW:-0}" = 1 ] && [ "$TIMEOUT_MIN" -gt $(( 2 * ${REVIEW_REPORT_MIN:-5} )) ] && agent_min=$(( TIMEOUT_MIN - ${REVIEW_REPORT_MIN:-5} ))
+  if [ "${REVIEW:-0}" = 1 ] && [ -f /in/bundles.json ] && [ -z "${CONTINUE_SESSION:-}" ]; then
+    # A review in parts (image/fanout.mjs): one session per bundle, side by side, merged into final.md
+    # and findings.json. Each part handles its own missing block and time limit.
+    fanned=1
+    log "review in $(jq length /in/bundles.json) part(s), ${REVIEW_FANOUT:-4} at once"
+    OC_MODEL="$OC_MODEL" AGENT="$agent_name" ATTACH="${attach_args[1]:-}" VARIANT="${VARIANT:-}" BRANCH="$BRANCH" AGENT_MIN="$agent_min" \
+      FANOUT="${REVIEW_FANOUT:-4}" node /opt/boxie/fanout.mjs 2>>"$OUT/harness.log"
+    agent_exit=$?
+  else
   timeout --kill-after=30 "${agent_min}m" \
     opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" \
     <"$OUT/prompt.md" >"$OUT/events.jsonl" 2>"$OUT/opencode.log"
   agent_exit=$?
+  fi
   agent_s=$(( $(date +%s) - t0 ))
   log "agent exit $agent_exit"
   # A free model out of quota (FreeUsageLimitError) or rate-limited: FREE_FALLBACK (an OmniRoute id,
@@ -312,8 +324,10 @@ final_message() {
     if (f !== null) fs.writeFileSync("/out/findings.json", JSON.stringify(f));
   ' 2>>"$OUT/harness.log" || true
 }
-[ -s "$OUT/events.jsonl" ] && final_message
+[ -s "$OUT/events.jsonl" ] && [ "${fanned:-0}" != 1 ] && final_message
 session_id="$(jq -r 'select(.sessionID) | .sessionID' "$OUT/events.jsonl" 2>/dev/null | tail -n 1)"
+# A review in parts has no one session to follow up: fanout.mjs did that per part.
+[ "${fanned:-0}" = 1 ] && session_id=""
 
 # 3a. A review stopped at its time limit gets one short turn to write the findings it has. The verdict
 #     stays timeout (incomplete), but the findings are kept. AACR-Bench react (2026-11-02): 147 tool

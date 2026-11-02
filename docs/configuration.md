@@ -71,6 +71,23 @@ slot. A project's `PROJECT_SLOTS` caps its own share. `MEMORY` (default `8g`) is
 memory cap. A launch also waits while the caps of running Boxie containers, plus taken slots not up
 yet, plus its own, exceed the engine's memory x `MEMORY_OVERCOMMIT` (default 1.5; 0 turns the check
 off). One container alone always starts. `doctor` warns when memory, not slots, limits how many run.
+A review that installs nothing (`REVIEW_SETUP=0`, every advise review) is capped at `REVIEW_MEMORY`
+(default `2g`) instead.
+
+## Reviews
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `REVIEW_KIND` | `gate` | `gate`: few, proven findings for the loop, one session with reproductions. `advise` (`review --advise`): every useful comment, the diff split into parts reviewed side by side |
+| `REVIEW_STEPS` | 90 | Step cap of a gate review's session |
+| `REVIEW_SETUP` | 1 | 0 skips `SETUP_CMD` on reviews. A failed setup never stops a review; the reviewer is told dependencies are missing |
+| `REVIEW_REPORT_MIN` | 5 | Minutes kept back from `TIMEOUT_MIN` for a review cut at its limit to write the findings it has |
+| `REVIEW_PART_STEPS`, `REVIEW_FANOUT`, `REVIEW_PARTS_MAX` | 40, 4, 8 | Advise: step cap per part, parts at once, parts at most (`lib/bundle.mjs`, `image/fanout.mjs`) |
+| `REVIEW_FILTER`, `REVIEW_FILTER_MIN`, `FILTER_MODEL` | 1, 3, the reviewer's | Advise: one call scores the merged findings against the diff; those under the minimum go to `filtered.json` (`image/filter.mjs`) |
+| `OCR_BIN`, `OCR_EFFORT`, `OCR_CONCURRENCY`, `OCR_TIMEOUT_MIN` | `ocr` on PATH, medium, 8, 15 | The `review-both-ocr` role: open-code-review on the host (`lib/ocr.mjs`) |
+
+An advise review uses open-code-review's per-language checklists (`ocr delegate rule`) when its binary
+is found, and places each finding on its line from the code it quotes (`image/anchor.mjs`).
 
 ## Caches
 

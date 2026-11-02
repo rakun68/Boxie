@@ -234,6 +234,12 @@ the background, about 100 s apart (the Podman VM dropped 3 starts within seconds
    `review` takes `--review-mode` and `--roles` too, and so does ticket mode (`ticket`, `feature ...
    run`, `ticket-review`).
 
+   **A second opinion on a PR, not a merge gate**: `review <repo> <branch> --advise` reports every
+   useful comment (defects, performance, maintainability), the diff split into parts reviewed side by
+   side, no setup, no reproductions, then a filter call. `--roles review-both-ocr` runs open-code-review
+   on the host instead (fast, no container); both roles in one `--roles` list give two independent
+   reviews. Advise findings are PLAUSIBLE until you check them: never forward one to a fixer unread.
+
 **Your own room.** The harness is deterministic so you are not the bottleneck, not so you stay out.
 Use your judgement wherever it pays: read any diff, probe the code, run tests, start your own Claude
 Code subagents (Opus 5.5 for a hard hunt or a second review), add findings with `resume --add`,

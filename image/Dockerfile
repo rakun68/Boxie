@@ -17,14 +17,9 @@ RUN mkdir -p /opt/boxie \
  && curl -fsSL -o /opt/boxie/vineflower.jar https://repo1.maven.org/maven2/org/vineflower/vineflower/1.10.1/vineflower-1.10.1.jar \
  && echo "b9b208e50793b64657a6b6292067526613f549de7405f9243624b02f4276e409  /opt/boxie/vineflower.jar" | sha256sum -c -
 
-COPY run-task.sh /usr/local/bin/run-task.sh
-COPY api.mjs /usr/local/bin/api
-COPY changed-tests.sh /opt/boxie/changed-tests.sh
-COPY preamble.md preamble-review.md preamble-explore.md preamble-speccheck.md preamble-specgate.md make-config.mjs ask-mcp.mjs progress.mjs syntax-check.mjs last-stop.mjs recover-final.mjs /opt/boxie/
+# The plugin first: OpenCode installs its plugin package on the warm-up start below.
 COPY plugin.js /home/node/.config/opencode/plugins/boxie.js
-COPY skills/ /home/node/.config/opencode/skills/
-RUN chmod 755 /usr/local/bin/run-task.sh /usr/local/bin/api /opt/boxie/changed-tests.sh \
- && mkdir -p /work/repo/node_modules /in /out /home/node/.npm /home/node/.cache/boxie-api \
+RUN mkdir -p /work/repo/node_modules /in /out /home/node/.npm /home/node/.cache/boxie-api \
  && chown -R node:node /work /in /out /home/node
 
 USER node
@@ -38,6 +33,15 @@ RUN mkdir -p /tmp/warm && cd /tmp/warm && git init -q \
  && pkill -f "[o]pencode serve"; sleep 1 \
  ; test -d /home/node/.config/opencode/node_modules/@opencode-ai/plugin || { cat /tmp/warm.log; exit 1; } \
  && rm -rf /tmp/warm /tmp/warm.log /home/node/.local/share/opencode /home/node/.local/state/opencode
+# The harness scripts last: editing one rebuilds only these layers, not the warm-up above.
+USER root
+COPY run-task.sh /usr/local/bin/run-task.sh
+COPY api.mjs /usr/local/bin/api
+COPY changed-tests.sh /opt/boxie/changed-tests.sh
+COPY preamble.md preamble-review.md preamble-advise.md preamble-explore.md preamble-speccheck.md preamble-specgate.md make-config.mjs ask-mcp.mjs progress.mjs syntax-check.mjs last-stop.mjs recover-final.mjs fanout.mjs anchor.mjs filter.mjs /opt/boxie/
+COPY --chown=node:node skills/ /home/node/.config/opencode/skills/
+RUN chmod 755 /usr/local/bin/run-task.sh /usr/local/bin/api /opt/boxie/changed-tests.sh
+USER node
 # A UTF-8 locale: Java 17 reads sources in the locale's encoding, and the default POSIX one compiled
 # RakunLoots' UTF-8 sources as US-ASCII (RakunLoots P9, 2026-10-21).
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8

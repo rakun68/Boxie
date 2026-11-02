@@ -86,7 +86,11 @@ Usage: delegate.sh <command> ...
                                  --roles names the reviewers outright (one axis: --roles review-spec).
                                  --name P names the runs P-<role>; --prior spec=FILE|std=FILE|both=FILE
                                  puts the previous round's findings first, to recheck
-  loop     <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE]
+                                 --advise (REVIEW_KIND=advise): every useful comment, not only proven
+                                 blockers; the diff split into parts reviewed side by side in one
+                                 container, no setup. --roles review-both-ocr runs open-code-review on
+                                 the host instead (lib/ocr.mjs). Exits 3 when a reviewer did not finish
+  loop    <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE]
                         [--review-mode split|both] [--roles a,b] [--fresh ROLES|none] [--max-fixes N] [--effort LEVEL]
                                  Review, rerun each finding's reproduction and the tests next to the
                                  change, fix what is proven, review the fix, until nothing blocks.
@@ -567,7 +571,7 @@ launch() {
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
     AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S SPEC_GATE
-    FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP)
+    FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then
@@ -585,6 +589,8 @@ launch() {
   mkdir -p "$stage" && mv "$run_dir/in.bundle" "$stage/repo.bundle"
   [ -n "${HIDDEN_DIR:-}" ] && mkdir -p "$stage/hidden" && cp -r "$HIDDEN_DIR/." "$stage/hidden/"
   [ -n "${REF_DIR:-}" ] && mkdir -p "$stage/ref" && cp -r "$REF_DIR/." "$stage/ref/"
+  # An advise review's parts (cmd_review): image/fanout.mjs reads them.
+  [ -n "${BUNDLES_FILE:-}" ] && cp "$BUNDLES_FILE" "$stage/bundles.json" && cp "$BUNDLES_FILE" "$run_dir/bundles.json"
   if [ -n "${CONTINUE_SESSION:-}" ]; then
     cp "$run_dir/message.md" "$stage/task.md"
     [ "$reuse" = 1 ] || cp "$CONTINUE_FROM/opencode-data.tgz" "$stage/opencode-data.tgz"
@@ -858,8 +864,11 @@ cmd_run() {
   fi
   # A review without setup builds nothing: REVIEW_MEMORY (default 2g) instead of MEMORY's 8g, so two
   # fit beside each other in a 3.8 GiB engine where 8g caps let only one run.
+  # A review in parts installs nothing. Set here: boxie.conf, sourced again by this run, resets the
+  # REVIEW_SETUP=0 the review passed in (AACR vllm smoke, 2026-11-02).
+  [ -n "${BUNDLES_FILE:-}" ] && REVIEW_SETUP=0
   [ "$REVIEW" = 1 ] && [ "${REVIEW_SETUP:-1}" = 0 ] && MEMORY="${REVIEW_MEMORY:-2g}"
-  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}"
+  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}" REVIEW_FANOUT="${REVIEW_FANOUT:-4}" REVIEW_REPORT_MIN="${REVIEW_REPORT_MIN:-5}" REVIEW_FILTER="${REVIEW_FILTER:-1}" REVIEW_FILTER_MIN="${REVIEW_FILTER_MIN:-3}" FILTER_MODEL="${FILTER_MODEL:-}"
   [ -n "$name" ] || name="$(date +%Y%m%d-%H%M%S)-${role:-$(echo "$MODEL" | tr -c 'a-zA-Z0-9.\n' '-' | cut -c1-30)}"
   launch "$name" "$task" "$base" 0
 }
@@ -1281,7 +1290,7 @@ ocr_review() {
 
 cmd_review() {
   local repo="$1" branch="$2"; shift 2
-  local roles="" mode="" against="" focus="" prefix="" prior_spec="" prior_std="" prior_both="" specs=() effort="" paths=""
+  local roles="" mode="" against="" focus="" prefix="" prior_spec="" prior_std="" prior_both="" specs=() effort="" paths="" kind=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --roles) roles="$2"; shift 2 ;;
@@ -1292,6 +1301,9 @@ cmd_review() {
       --focus) focus="$2"; shift 2 ;;
       --spec) [ -f "$2" ] || die "no such spec file $2"; specs+=("$2"); shift 2 ;;
       --name) prefix="$2"; shift 2 ;;        # review runs are named PREFIX-<role>
+      # Advise: every useful comment, reviewed in parts side by side (image/fanout.mjs), no setup, no
+      # reproductions. The default (gate) keeps few, proven findings for the loop.
+      --advise) kind=advise; shift ;;
       # The previous round's findings for one axis, rechecked first (the review loop, lib/loop.mjs).
       --prior) [ -f "${2#*=}" ] || die "no such prior findings file ${2#*=}"
         case "$2" in spec=*) prior_spec="${2#*=}" ;; std=*) prior_std="${2#*=}" ;; both=*) prior_both="${2#*=}" ;; *) die "--prior takes spec=FILE, std=FILE or both=FILE" ;; esac
@@ -1311,6 +1323,19 @@ cmd_review() {
   local tdir="$BOX/runs/$PROJECT/.review-$stamp${prefix:+-$prefix}"; mkdir -p "$tdir"
   local body="$tdir/body.md" origin="$BOX/runs/$PROJECT/${branch#agent/}/task-body.md" f
   local pspec=(); [ -z "$paths" ] || mapfile -t pspec < <(tr ' ' '\n' <<<"$paths" | grep -v '^$')
+  kind="${kind:-${REVIEW_KIND:-gate}}"
+  [ "$kind" = gate ] || [ "$kind" = advise ] || die "REVIEW_KIND is gate or advise, not $kind"
+  # Advise: the parts every reviewer of this round takes (lib/bundle.mjs), with open-code-review's
+  # per-language checklists when its binary is here.
+  local bundles=""
+  if [ "$kind" = advise ]; then
+    local ocrb; ocrb="$(OCR_BIN="${OCR_BIN:-}" node "$(winpath "$BOX/lib/ocr.mjs")" bin 2>/dev/null || true)"
+    node "$(winpath "$BOX/lib/bundle.mjs")" "$(winpath "$REPO")" "$base" "$branch" --full ${ocrb:+--ocr "$ocrb"} \
+      --max "${REVIEW_PARTS_MAX:-8}" ${paths:+--paths "$paths"} >"$tdir/bundles-full.json" || die "could not split the diff into parts"
+    bundles="$tdir/bundles.json"
+    node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); require("fs").writeFileSync(process.argv[2], JSON.stringify(j.bundles)); console.error(`boxie: advise review in ${j.bundles.length} part(s): ${j.bundles.map((b)=>b.files.length).join("+")} files${j.skipped.length ? `, ${j.skipped.length} skipped (lockfiles, binaries, generated)` : ""}`)' \
+      "$(winpath "$tdir/bundles-full.json")" "$(winpath "$bundles")"
+  fi
   [ -f "$origin" ] || [ ${#specs[@]} -gt 0 ] || echo "boxie: warning: no spec: $branch was not made by boxie and no --spec was given" >&2
   {
     echo
@@ -1333,7 +1358,8 @@ cmd_review() {
     # file (La-t50 review, 2026-10-17: 7 of 51 shell calls). After the task and spec, so the last
     # instructions a reviewer reads are not the implementer's: with the diff before them, a DeepSeek
     # review of RakunMiniItems #50 implemented the task instead (2026-10-17). REVIEW_DIFF_MAX chars, 0 = never.
-    local diff; diff="$(git -C "$REPO" diff "$base" "$branch" -- "${pspec[@]}" 2>/dev/null)"
+    # An advise review gives each part its own diff instead (image/fanout.mjs).
+    local diff=""; [ "$kind" = advise ] || diff="$(git -C "$REPO" diff "$base" "$branch" -- "${pspec[@]}" 2>/dev/null)"
     if [ -n "$diff" ] && [ "${#diff}" -le "${REVIEW_DIFF_MAX:-30000}" ]; then
       echo; echo "## The diff (\`git diff $base..HEAD\`, already read for you)"; echo
       echo '````diff'; printf '%s\n' "$diff"; echo '````'
@@ -1377,6 +1403,7 @@ cmd_review() {
       review-both*) prompt="$BOX/lib/ticket/review-both.md"; prior="$prior_both" ;;
       *) prompt=""; prior="" ;;
     esac
+    [ "$kind" = advise ] && prompt="$BOX/lib/ticket/review-advise.md"
     {
       echo "---"; echo "files:"; git -C "$REPO" diff --name-only "$base" "$branch" -- "${pspec[@]}" | head -n 40 | sed 's/^/  - /'; echo "---"
       [ -n "$prompt" ] && cat "$prompt"
@@ -1389,6 +1416,10 @@ cmd_review() {
     if [[ "${!rvar:-}" == ocr:* ]]; then
       local om="${!rvar%% *}"
       ocr_review "$n" "${om#ocr:}" "$r" "$base" "$branch" "$tdir/task-${r/@/-}.md" "${pspec[*]}" "$origin" "${specs[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+    elif [ "$kind" = advise ]; then
+      # REVIEW_PART_STEPS caps each part's session; open-code-review's groups used 31-98 tool calls a PR.
+      BUNDLES_FILE="$bundles" REVIEW_SETUP=0 REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" \
+        --name "$n" --mode review --preamble advise --steps "${REVIEW_PART_STEPS:-40}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     else
       REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" --name "$n" --mode review ${REVIEW_STEPS:+--steps "$REVIEW_STEPS"} >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     fi
