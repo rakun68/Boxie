@@ -398,3 +398,15 @@ for everything.
 
 **Open.** Grill this before changing anything: which runs need a container, what guards a
 host-side run, and where the time goes per run (setup, model steps, tests).
+
+**Measured** (2026-11-02, every `summary.json` under `runs/` from the last 14 days):
+
+| Runs | n | Total s | Setup s | Agent s | Test s |
+| --- | --- | --- | --- | --- | --- |
+| implement | 286 | 1,203 | 20 | 983 | 182 |
+| review | 194 | 724 | 24 | 678 | 0 |
+
+The agent's own time is 82% of an implement run and 94% of a review. Setup, container start and the
+harness together are about 40 s. A container costs a run little time; the model's step count is what
+costs. Memory does cost: 8g caps in a 3.8 GiB engine let one container run at a time, so reviews that
+install nothing now use `REVIEW_MEMORY` (2g).
