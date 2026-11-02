@@ -25,6 +25,7 @@ runs/
 ledger/
 node_modules/
 bench/.repos/
+.tools/
 *.log
 *.tmp
 *.bundle

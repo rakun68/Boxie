@@ -1248,6 +1248,37 @@ cmd_fanout() {
 # tests) and review-std (the repo's standards); or, in review mode `both`, one review-both covering
 # both (lib/reviewmode.mjs). Every reviewer gets the spec: the branch's own task when boxie made
 # it, plus every --spec file.
+# One review by open-code-review (lib/ocr.mjs) as a run of its own: meta.sh, the task, the ledger entry
+# and verdict.txt as for a container review. The task the change was made for and any --spec go to OCR
+# as its background. ocr_review <name> <model> <role> <base> <branch> <task> <paths> <origin> [spec...]
+ocr_review() {
+  local n="$1" model="$2" role="$3" base="$4" branch="$5" task="$6" paths="$7" origin="$8"; shift 8
+  local dir="$BOX/runs/$PROJECT/$n" bg="" f
+  [ -e "$dir" ] && die "run $n exists"
+  mkdir -p "$dir"; cp "$task" "$dir/task.md"
+  need_key
+  if [ -f "$origin" ] || [ $# -gt 0 ]; then
+    bg="$dir/background.md"
+    { [ -f "$origin" ] && { echo "# The task the change was made for"; echo; cat "$origin"; echo; }
+      for f in "$@"; do echo "# Spec: $(basename "$f")"; echo; cat "$f"; echo; done; } >"$bg"
+  fi
+  local v MODEL="ocr:$model" ROLE="$role" REVIEW=1 REVIEW_TARGET="$branch" TIMEOUT_MIN="${OCR_TIMEOUT_MIN:-15}"
+  for v in MODEL ROLE REVIEW REVIEW_TARGET TIMEOUT_MIN; do printf '%s=%q\n' "$v" "${!v}"; done >"$dir/meta.sh"
+  printf 'RUN_BASE_SHA=%q\nRUN_BASE_REF=%q\nENGINE=ocr\n' "$(git -C "$REPO" rev-parse "$base")" "$branch" >>"$dir/meta.sh"
+  echo "boxie: $n: open-code-review on $model (host, read-only worktree)" >&2
+  OCR_BIN="${OCR_BIN:-}" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="$OMNIROUTE_API_KEY" node "$(winpath "$BOX/lib/ocr.mjs")" review \
+    "$(winpath "$REPO")" "$base" "$branch" "$(winpath "$dir")" --model "$model" --effort "${OCR_EFFORT:-medium}" \
+    --concurrency "${OCR_CONCURRENCY:-8}" --timeout "${OCR_TIMEOUT_MIN:-15}" ${OCR_MAX_TOOLS:+--max-tools "$OCR_MAX_TOOLS"} \
+    ${bg:+--background-file "$(winpath "$bg")"} ${paths:+--paths "$paths"} 2>&1 | tee "$dir/harness.log" >&2 || true
+  if [ -f "$dir/summary.json" ]; then
+    node "$(winpath "$BOX/lib/ledger.mjs")" finish "$(winpath "$REPO")" "$(winpath "$dir")" --mode review --target "$branch" >"$dir/verdict.txt" 2>>"$dir/harness.log" \
+      || echo "ledger: could not record this run (see harness.log)" >"$dir/verdict.txt"
+  else
+    echo "verdict error  next fix_environment  (open-code-review wrote no summary: see harness.log)" >"$dir/verdict.txt"
+  fi
+  cat "$dir/verdict.txt" >&2
+}
+
 cmd_review() {
   local repo="$1" branch="$2"; shift 2
   local roles="" mode="" against="" focus="" prefix="" prior_spec="" prior_std="" prior_both="" specs=() effort="" paths=""
@@ -1353,8 +1384,14 @@ cmd_review() {
       [ -n "$prior" ] && { echo; cat "$prior"; }
       cat "$body"
     } >"$tdir/task-${r/@/-}.md"
-    local n="${prefix:-rv-$stamp}-${r%%@*}"
-    REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" --name "$n" --mode review ${REVIEW_STEPS:+--steps "$REVIEW_STEPS"} >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+    local n="${prefix:-rv-$stamp}-${r%%@*}" rvar="ROLE_${r%%@*}"; rvar="${rvar//-/_}"
+    # A role whose model is ocr:<model> runs open-code-review on the host (lib/ocr.mjs), no container.
+    if [[ "${!rvar:-}" == ocr:* ]]; then
+      local om="${!rvar%% *}"
+      ocr_review "$n" "${om#ocr:}" "$r" "$base" "$branch" "$tdir/task-${r/@/-}.md" "${pspec[*]}" "$origin" "${specs[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+    else
+      REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" --name "$n" --mode review ${REVIEW_STEPS:+--steps "$REVIEW_STEPS"} >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+    fi
     names+=("$n"); sleep 2
   done
   wait
@@ -1761,7 +1798,7 @@ case "${1:-}" in
     AB_BASH="$BASH_VERSION" AB_ENGINE="$ENGINE" AB_IMAGE="$IMAGE" AB_BASE_IMAGE="$BASE_IMAGE" AB_BOX="$(winpath "$BOX")" \
       AB_PROJECT_ENV="${PROJECT_ENV:-}" AB_REPO="${REPO:-}" AB_HOST_IP="$(host_address)" AB_NETWORK="${BOXIE_NETWORK:-}" \
       AB_SLOTS="${BOXIE_SLOTS:-4}" AB_MEMORY="${MEMORY:-8g}" AB_OVERCOMMIT="${MEMORY_OVERCOMMIT:-1.5}" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
-      OMNIROUTE_HOST_URL="${OMNIROUTE_HOST_URL:-http://localhost:20128/v1}" OMNIROUTE_BASE_URL="$OMNIROUTE_BASE_URL" \
+      OMNIROUTE_HOST_URL="${OMNIROUTE_HOST_URL:-http://localhost:20128/v1}" OMNIROUTE_BASE_URL="$OMNIROUTE_BASE_URL" OCR_BIN="${OCR_BIN:-}" \
       node "$(winpath "$BOX/lib/doctor.mjs")" ;;
   gc) shift; cmd_gc "$@" ;;
   bench) shift; BOXIE_REPOS="${BOXIE_REPOS:-}" node "$(winpath "$BOX/lib/bench.mjs")" "$@" ;;
