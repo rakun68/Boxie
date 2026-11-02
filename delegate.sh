@@ -571,7 +571,7 @@ launch() {
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
     AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S SPEC_GATE
-    FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
+    FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_PART_MIN REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then
@@ -868,7 +868,7 @@ cmd_run() {
   # REVIEW_SETUP=0 the review passed in (AACR vllm smoke, 2026-11-02).
   [ -n "${BUNDLES_FILE:-}" ] && REVIEW_SETUP=0
   [ "$REVIEW" = 1 ] && [ "${REVIEW_SETUP:-1}" = 0 ] && MEMORY="${REVIEW_MEMORY:-2g}"
-  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}" REVIEW_FANOUT="${REVIEW_FANOUT:-4}" REVIEW_REPORT_MIN="${REVIEW_REPORT_MIN:-5}" REVIEW_FILTER="${REVIEW_FILTER:-1}" REVIEW_FILTER_MIN="${REVIEW_FILTER_MIN:-3}" FILTER_MODEL="${FILTER_MODEL:-}"
+  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}" REVIEW_FANOUT="${REVIEW_FANOUT:-6}" REVIEW_PART_MIN="${REVIEW_PART_MIN:-7}" REVIEW_REPORT_MIN="${REVIEW_REPORT_MIN:-5}" REVIEW_FILTER="${REVIEW_FILTER:-1}" REVIEW_FILTER_MIN="${REVIEW_FILTER_MIN:-3}" FILTER_MODEL="${FILTER_MODEL:-}"
   [ -n "$name" ] || name="$(date +%Y%m%d-%H%M%S)-${role:-$(echo "$MODEL" | tr -c 'a-zA-Z0-9.\n' '-' | cut -c1-30)}"
   launch "$name" "$task" "$base" 0
 }
@@ -1331,7 +1331,7 @@ cmd_review() {
   if [ "$kind" = advise ]; then
     local ocrb; ocrb="$(OCR_BIN="${OCR_BIN:-}" node "$(winpath "$BOX/lib/ocr.mjs")" bin 2>/dev/null || true)"
     node "$(winpath "$BOX/lib/bundle.mjs")" "$(winpath "$REPO")" "$base" "$branch" --full ${ocrb:+--ocr "$ocrb"} \
-      --max "${REVIEW_PARTS_MAX:-8}" ${paths:+--paths "$paths"} >"$tdir/bundles-full.json" || die "could not split the diff into parts"
+      --max "${REVIEW_PARTS_MAX:-8}" --files "${REVIEW_PART_FILES:-3}" ${paths:+--paths "$paths"} >"$tdir/bundles-full.json" || die "could not split the diff into parts"
     bundles="$tdir/bundles.json"
     node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); require("fs").writeFileSync(process.argv[2], JSON.stringify(j.bundles)); console.error(`boxie: advise review in ${j.bundles.length} part(s): ${j.bundles.map((b)=>b.files.length).join("+")} files${j.skipped.length ? `, ${j.skipped.length} skipped (lockfiles, binaries, generated)` : ""}`)' \
       "$(winpath "$tdir/bundles-full.json")" "$(winpath "$bundles")"
@@ -1419,7 +1419,7 @@ cmd_review() {
     elif [ "$kind" = advise ]; then
       # REVIEW_PART_STEPS caps each part's session; open-code-review's groups used 31-98 tool calls a PR.
       BUNDLES_FILE="$bundles" REVIEW_SETUP=0 REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" \
-        --name "$n" --mode review --preamble advise --steps "${REVIEW_PART_STEPS:-40}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+        --name "$n" --mode review --preamble advise --steps "${REVIEW_PART_STEPS:-30}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     else
       REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" --name "$n" --mode review ${REVIEW_STEPS:+--steps "$REVIEW_STEPS"} >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     fi
@@ -1435,6 +1435,13 @@ cmd_review() {
   # A review that did not finish exits 3: a script reading only the exit code logged two failed AACR-Bench
   # reviews (setup_failed, timeout) as success (2026-11-02).
   for n in "${names[@]}"; do echo "$n: $(cat "$BOX/runs/$PROJECT/$n/verdict.txt" 2>/dev/null || echo "no verdict")"; done
+  # Several reviewers: one list, repeats merged (lib/merge-reviews.mjs). Merged independent passes
+  # raise recall; the repeats would cost precision (research/review-tools-survey.md).
+  if [ "${#names[@]}" -gt 1 ]; then
+    local merged="$BOX/runs/$PROJECT/${prefix:-rv-$stamp}-merged.json" dirs=()
+    for n in "${names[@]}"; do dirs+=("$(winpath "$BOX/runs/$PROJECT/$n")"); done
+    node "$(winpath "$BOX/lib/merge-reviews.mjs")" "$(winpath "$merged")" "${dirs[@]}" && echo "merged findings: $merged"
+  fi
   [ "$unfinished" = 0 ] || return 3
 }
 

@@ -24,10 +24,18 @@ the same file: score the weaker one 0 and say which it duplicates.
 Answer with only a JSON array, one object per comment, analysis before score:
 [{"id": 1, "analysis": "<one or two sentences>", "score": 7}]`;
 
+// Only the files the findings name: the whole diff made one call take over 280 s (vllm smoke, 2026-11-02).
+export function diffOf(diff, files) {
+  const want = new Set(files);
+  const parts = String(diff).split(/(?=^diff --git )/m);
+  const kept = parts.filter((p) => { const m = p.match(/^diff --git a\/(\S+) b\/(\S+)/); return !m || want.has(m[1]) || want.has(m[2]); });
+  return kept.join("");
+}
+
 export function filterPrompt(findings, diff) {
   const items = findings.map((f, i) => ({ id: i + 1, file: f.file, line: f.line, severity: f.severity, issue: f.issue,
     scenario: String(f.scenario ?? "").slice(0, 600), existing_code: String(f.existing_code ?? "").slice(0, 400) }));
-  return `## Diff\n\n\`\`\`\`diff\n${String(diff).slice(0, 120000)}\n\`\`\`\`\n\n## Comments\n\n${JSON.stringify(items, null, 1)}`;
+  return `## Diff\n\n\`\`\`\`diff\n${diffOf(diff, findings.map((f) => f.file)).slice(0, 120000)}\n\`\`\`\`\n\n## Comments\n\n${JSON.stringify(items, null, 1)}`;
 }
 
 export function parseScores(text) {
@@ -43,12 +51,12 @@ export function parseScores(text) {
 }
 
 // {kept, dropped, error}: each kept finding carries filter_score.
-export async function filter(findings, diff, { model, base, key, min = 3, fetchImpl = fetch } = {}) {
+export async function filter(findings, diff, { model, base, key, min = 3, timeoutMs = 120000, fetchImpl = fetch } = {}) {
   if (!findings.length) return { kept: findings, dropped: [], error: null };
   try {
     const r = await fetchImpl(`${base}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, messages: [{ role: "system", content: SYSTEM }, { role: "user", content: filterPrompt(findings, diff) }] }),
-      signal: AbortSignal.timeout(280000) });
+      signal: AbortSignal.timeout(timeoutMs) });
     const j = await r.json();
     const scores = parseScores(j.choices?.[0]?.message?.content);
     if (!r.ok || !scores) return { kept: findings, dropped: [], error: `filter: ${r.status} ${j.error?.message ?? "no readable scores"}`.slice(0, 300) };

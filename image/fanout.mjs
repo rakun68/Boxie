@@ -6,14 +6,16 @@
 //   node /opt/boxie/fanout.mjs      (run-task.sh, advise reviews; inputs below)
 //
 // In: /in/bundles.json [{files, diff, rules, others}], /out/prompt.md (preamble, context, task).
-// Env: OC_MODEL, AGENT, ATTACH (server URL or ""), VARIANT, BRANCH, AGENT_MIN (minutes per part),
-//      FANOUT (parts at once, default 4), REVIEW_REPORT_MIN (default 5); REVIEW_FILTER (0: off),
+// Env: OC_MODEL, AGENT, ATTACH (server URL or ""), VARIANT, BRANCH, AGENT_MIN and REVIEW_PART_MIN (the
+//      smaller is each part's minutes),
+//      FANOUT (parts at once, default 6), REVIEW_REPORT_MIN (default 5); REVIEW_FILTER (0: off),
 //      REVIEW_FILTER_MIN (default 3), FILTER_MODEL (default MODEL), OMNIROUTE_BASE_URL, OMNIROUTE_API_KEY.
 // Out: /out/parts/<i>.{prompt.md,events.jsonl,final.md}, /out/events.jsonl (all parts), /out/final.md,
 //      /out/findings.json, /out/fanout.json. Exit 0, 124 when a part hit its time limit, else 1.
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { anchor } from "./anchor.mjs";
 import { filter } from "./filter.mjs";
 
@@ -74,18 +76,31 @@ function opencode(args, stdinText, minutes, outFile) {
   });
 }
 
+// `opencode run --attach` can exit before the last step reaches stdout (recover-final.mjs): every part
+// runs attached, and the vllm smoke lost all 3 parts' final messages (2026-11-02). Rebuild it from the store.
+const DB = path.join(env.HOME || "/home/node", ".local/share/opencode/opencode.db");
+function recover(ev) {
+  const { sid } = lastText(fs.readFileSync(ev, "utf8"));
+  if (!sid || !fs.existsSync(DB)) return;
+  spawnSync("node", ["--no-warnings", path.join(path.dirname(fileURLToPath(import.meta.url)), "recover-final.mjs"), ev, DB, sid], { stdio: "ignore" });
+}
+
+const PART_MIN = Math.min(Number(env.AGENT_MIN || 30), Number(env.REVIEW_PART_MIN || 7));
+
 async function part(b, i, n, base) {
   const dir = path.join(OUT, "parts"); fs.mkdirSync(dir, { recursive: true });
   const ev = path.join(dir, `${i + 1}.events.jsonl`), t0 = Date.now();
   const prompt = partPrompt(base, b, i, n);
   fs.writeFileSync(path.join(dir, `${i + 1}.prompt.md`), prompt);
   const title = `${env.BRANCH || "review"}-part${i + 1}`;
-  let exit = await opencode(["--title", title], prompt, Number(env.AGENT_MIN || 30), ev);
+  let exit = await opencode(["--title", title], prompt, PART_MIN, ev);
+  recover(ev);
   let { last, sid } = lastText(fs.readFileSync(ev, "utf8"));
   // A part that died before its session started (a server hiccup, a locked database) runs once more.
   if (exit !== 0 && exit !== 124 && exit !== 137 && !sid) {
     await new Promise((r) => setTimeout(r, 3000));
-    exit = await opencode(["--title", title], prompt, Number(env.AGENT_MIN || 30), ev);
+    exit = await opencode(["--title", title], prompt, PART_MIN, ev);
+    recover(ev);
     ({ last, sid } = lastText(fs.readFileSync(ev, "utf8")));
   }
   let cut = null;
@@ -94,9 +109,11 @@ async function part(b, i, n, base) {
     cut = "timeout";
     if (env.ATTACH) await fetch(`${env.ATTACH}/session/${sid}/abort`, { method: "POST" }).catch(() => {});
     await opencode(["--session", sid, "--title", title, "Time is up. Do not read or run anything more. Write your findings now, ending with the `boxie-findings` block."], null, Number(env.REVIEW_REPORT_MIN || 5), ev);
+    recover(ev);
     ({ last } = lastText(fs.readFileSync(ev, "utf8")));
   } else if (exit === 0 && sid && findingsOf(last) === null) {
     await opencode(["--session", sid, "--title", title, "Your last message has no readable `boxie-findings` block. Do not review again. Reply with only that fenced block: a JSON array of your findings, `[]` when there are none."], null, 5, ev);
+    recover(ev);
     const again = lastText(fs.readFileSync(ev, "utf8")).last;
     if (findingsOf(again) !== null) last = `${last}\n\n${again}`;
   }
@@ -110,7 +127,7 @@ async function part(b, i, n, base) {
 export async function main() {
   const bundles = JSON.parse(fs.readFileSync(path.join(IN, "bundles.json"), "utf8"));
   const base = fs.readFileSync(path.join(OUT, "prompt.md"), "utf8");
-  const n = bundles.length, width = Math.max(1, Number(env.FANOUT || 4));
+  const n = bundles.length, width = Math.max(1, Number(env.FANOUT || 6));
   const results = new Array(n);
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(width, n) }, async () => {
@@ -139,7 +156,9 @@ export async function main() {
     "```boxie-findings", JSON.stringify(findings, null, 1), "```", ""].join("\n");
   fs.writeFileSync(path.join(OUT, "final.md"), final);
   fs.writeFileSync(path.join(OUT, "fanout.json"), JSON.stringify({ parts: results.map(({ last, findings: f, ...r }) => ({ ...r, findings: f?.length ?? null })), merged: findings.length, anchored: moved, filtered, unreadable: unread }, null, 2));
-  if (results.some((r) => r.cut)) return 124;
+  // REVIEW_PART_MIN cuts a part by design and its report turn writes what it found: that is a review.
+  // Only a cut part with no readable findings makes the whole a timeout (vllm smoke, 2026-11-02).
+  if (results.some((r) => r.cut && r.findings === null)) return 124;
   // A part that wrote no readable block and ran fine is still a review: its prose is in final.md.
   return results.every((r) => r.exit === 0) ? 0 : 1;
 }

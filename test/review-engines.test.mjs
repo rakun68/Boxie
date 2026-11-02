@@ -154,3 +154,12 @@ test("merge-reviews: one finding per problem across reviewers, the more severe k
   assert.equal(m.length, 3);
   assert.deepEqual([m[0].severity, m[0].by], ["high", ["ocr", "gemini"]]);
 });
+
+test("filter: the prompt carries only the diffs of the files the findings name", async () => {
+  const { diffOf, filterPrompt } = await import("../image/filter.mjs");
+  const d = "diff --git a/x.py b/x.py\n+one\ndiff --git a/y.py b/y.py\n+two\n";
+  assert.equal(diffOf(d, ["y.py"]), "diff --git a/y.py b/y.py\n+two\n");
+  const p = filterPrompt([{ file: "x.py", line: 1, issue: "i" }], d);
+  assert.match(p, /\+one/);
+  assert.doesNotMatch(p, /\+two/);
+});
