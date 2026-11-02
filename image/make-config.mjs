@@ -74,6 +74,9 @@ const agent = {
     description: "Reviews the repository read-only; scratch files go under /tmp",
     model: ocId(model),
     permission: { ...common, edit: { "*": "deny" } },
+    // The review's step cap (REVIEW_STEPS). Only the worker had one: AACR-Bench (2026-11-02) reviews ran
+    // 91-148 steps under REVIEW_STEPS=90, and react's 147 hit the 30-minute timeout with no findings.
+    ...(Number(env.STEPS) > 0 ? { steps: Number(env.STEPS) } : {}),
   },
 };
 if (scout) {

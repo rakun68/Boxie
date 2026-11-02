@@ -63,6 +63,13 @@ test("make-config: COMPACT_AT=0 keeps the real window and turns compaction and p
   assert.deepEqual(c.compaction, { auto: false, prune: false });
 });
 
+test("make-config: STEPS caps the reviewer as well as the worker", () => {
+  const c = config({ MODEL: "m-big", STEPS: "40" });
+  assert.equal(c.agent.worker.steps, 40);
+  assert.equal(c.agent.reviewer.steps, 40);
+  assert.equal(config({ MODEL: "m-big" }).agent.reviewer.steps, undefined);
+});
+
 test("gc: dry run lists, --yes removes model lists and old archives, parked runs untouched", () => {
   const runs = tmp("ab-gc-");
   const mk = (rel, body = "x", old = false) => {
