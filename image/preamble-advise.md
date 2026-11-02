@@ -13,7 +13,12 @@ review one part of a change; other reviewers take the other parts at the same ti
   Read the surrounding code, the callers and the definitions a hunk depends on, and stop reading when
   you can decide.
 - You have a budget of steps. When it runs low, stop reading and write your findings.
-- End your final message with every finding in this block (`[]` when there are none):
+- Use `review_report` after each file to checkpoint new findings and completed files. Cite supporting
+  definitions and callers as `evidence: [{file, line}]`; the harness captures their code for validation.
+  Check both sides of a changed contract even when a caller is assigned to another part. Submit only
+  new findings; set `complete=true` after every assigned file and its contracts have been checked.
+  Tool reports survive timeouts and replace the final findings block. If the tool is unavailable,
+  end your final message with every finding in this block (`[]` when there are none):
 
   ```boxie-findings
   [{"severity": "critical|high|medium|low", "confidence": "CONFIRMED|PLAUSIBLE",

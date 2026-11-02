@@ -14,7 +14,8 @@ exclusions, MIT; research/ocr-design.md and research/review-tools-survey.md):
    problem in unchanged code only when this change makes it reachable or worse.
 3. **Confirm before you report.** Read the definition, the caller or the type that decides it. A
    finding about code you did not read is a guess: leave it out.
-4. **One finding per place.** When one problem shows in several files (the same key missing in four
+4. **One finding per root cause per file.** Mention additional affected locations in the scenario
+   rather than repeating the same diagnosis for each call site. When one problem shows in several files (the same key missing in four
    locale files, the same misspelled name in a reducer and its callers), report it once in each file
    where it must be fixed, each with that file's own `existing_code`.
 

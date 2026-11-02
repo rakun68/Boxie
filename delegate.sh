@@ -873,7 +873,7 @@ cmd_run() {
   # REVIEW_SETUP=0 the review passed in (AACR vllm smoke, 2026-11-02).
   [ -n "${BUNDLES_FILE:-}" ] && REVIEW_SETUP=0
   [ "$REVIEW" = 1 ] && [ "${REVIEW_SETUP:-1}" = 0 ] && MEMORY="${REVIEW_MEMORY:-2g}"
-  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}" REVIEW_FANOUT="${REVIEW_FANOUT:-6}" REVIEW_PART_MIN="${REVIEW_PART_MIN:-7}" REVIEW_REPORT_MIN="${REVIEW_REPORT_MIN:-5}" REVIEW_FILTER="${REVIEW_FILTER:-1}" REVIEW_FILTER_MIN="${REVIEW_FILTER_MIN:-3}" FILTER_MODEL="${FILTER_MODEL:-}"
+  export MODEL EFFORT VARIANT ALLOW_WEB REVIEW ASK ROLE SCOUT_MODEL="${SCOUT_MODEL:-}" STEPS="${STEPS:-}" AUTOFIX="${AUTOFIX:-1}" NO_RED="${NO_RED:-0}" SPEC_GATE REVIEW_SETUP="${REVIEW_SETUP:-1}" REVIEW_FANOUT="${REVIEW_FANOUT:-6}" REVIEW_PART_MIN="${REVIEW_PART_MIN:-7}" REVIEW_REPORT_MIN="${REVIEW_REPORT_MIN:-5}" REVIEW_FILTER="${REVIEW_FILTER:-1}" REVIEW_FILTER_MIN="${REVIEW_FILTER_MIN:-6}" FILTER_MODEL="${FILTER_MODEL:-}"
   [ -n "$name" ] || name="$(date +%Y%m%d-%H%M%S)-${role:-$(echo "$MODEL" | tr -c 'a-zA-Z0-9.\n' '-' | cut -c1-30)}"
   launch "$name" "$task" "$base" 0
 }
@@ -1318,6 +1318,10 @@ cmd_review() {
     esac
   done
   load_project "$repo"
+  kind="${kind:-${REVIEW_KIND:-gate}}"
+  [ "$kind" = gate ] || [ "$kind" = advise ] || die "REVIEW_KIND is gate or advise, not $kind"
+  # Advise uses the same both-axes prompt for every part: two default roles would review it twice.
+  [ "$kind" != advise ] || [ -n "$mode$roles${REVIEW_ROLES:-}" ] || mode=both
   # After load_project: the project file may set its own REVIEW_MODE or REVIEW_ROLES.
   [ -n "$roles" ] || roles="$(node "$(winpath "$BOX/lib/reviewmode.mjs")" roles "$mode" "${REVIEW_ROLES:-}" "${REVIEW_MODE:-}")" || exit 1
   herdr_ok && herdr_ws >/dev/null
@@ -1332,8 +1336,6 @@ cmd_review() {
   local pspec=()
   if [[ "$paths" == *$'\n'* ]]; then mapfile -t pspec < <(grep -v '^$' <<<"$paths")
   elif [ -n "$paths" ]; then mapfile -t pspec < <(tr ' ' '\n' <<<"$paths" | grep -v '^$'); fi
-  kind="${kind:-${REVIEW_KIND:-gate}}"
-  [ "$kind" = gate ] || [ "$kind" = advise ] || die "REVIEW_KIND is gate or advise, not $kind"
   # Advise: the parts every reviewer of this round takes (lib/bundle.mjs), with open-code-review's
   # per-language checklists when its binary is here.
   local bundles=""
@@ -1378,7 +1380,11 @@ cmd_review() {
     echo "## Reminder: you are the reviewer"
     echo
     echo "Do not implement, fix or edit anything in the repository; the task above was the implementer's."
-    echo "Review the change against it and end with the \`boxie-findings\` block (\`[]\` when nothing blocks)."
+    if [ "$kind" = advise ]; then
+      echo "Review the change against it; checkpoint findings and completion with review_report."
+    else
+      echo "Review the change against it and end with the \`boxie-findings\` block (\`[]\` when nothing blocks)."
+    fi
   } >"$body"
   # The spec reviewer (and review-both) is never the implementer's family: it gets its -alt role.
   local impl="" r var alt

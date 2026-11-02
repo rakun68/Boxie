@@ -108,6 +108,9 @@ test("delegate.sh review in mode both: one review-both run, its own prompt, --pr
     const bad = review("--review-mode", "three");
     assert.notEqual(bad.status, 0);
     assert.match(bad.stderr, /unknown review mode three/);
+    fs.writeFileSync(env, "OMNIROUTE_API_KEY=\nREVIEW_MODE=split\n");
+    review("--name", "A", "--advise");
+    assert.deepEqual(fs.readdirSync(runs).filter((f) => f.startsWith(".A-")), [".A-review-both.log"], "advise defaults to one both-axes reviewer");
   } finally {
     fs.rmSync(runs, { recursive: true, force: true });
   }

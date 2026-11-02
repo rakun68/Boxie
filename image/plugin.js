@@ -3,7 +3,7 @@
 // time (Composer twice broke a file with a whole-file write; research/findings.md §3).
 // Installed as ~/.config/opencode/plugins/boxie.js. Hook shape: research/opencode-customization.md §6.
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const CHECK = "/opt/boxie/syntax-check.mjs";
 
@@ -21,7 +21,32 @@ const READ_DUMP = /^\s*<path>[^\n]*<\/path>\s*\n\s*<type>(?:file|directory)<\/ty
 // the file). Known gap 29: the check folded into the implementer instead of a session of its own.
 const SPEC_FILE = () => process.env.SPEC_GATE_FILE || "/out/spec-check.md";
 
-export const Boxie = async ({ directory }) => ({
+export const Boxie = async ({ directory }) => {
+  let reviewTools = {};
+  if (process.env.REVIEW === "1" && existsSync("/in/bundles.json")) {
+    const { tool } = await import("@opencode-ai/plugin");
+    const { checkpoint } = await import("/opt/boxie/review-state.mjs");
+    // Frozen with the tool schema at server boot; every part uses the same prepared diff and rules.
+    const bundles = JSON.parse(readFileSync("/in/bundles.json", "utf8"));
+    reviewTools = { review_report: tool({
+      description: "Save new findings and completed files for your assigned review part. Call after each file; saved findings survive a timeout. Set complete only after checking all assigned files and their callers/contracts. Never resend saved findings.",
+      args: {
+        part: tool.schema.number().int().min(1),
+        reviewed_files: tool.schema.array(tool.schema.string()),
+        complete: tool.schema.boolean(),
+        findings: tool.schema.array(tool.schema.object({
+          file: tool.schema.string(), line: tool.schema.number().int().min(1),
+          severity: tool.schema.enum(["critical", "high", "medium", "low"]),
+          category: tool.schema.string(), issue: tool.schema.string(), scenario: tool.schema.string(),
+          existing_code: tool.schema.string(), suggestion: tool.schema.string(),
+          evidence: tool.schema.array(tool.schema.object({ file: tool.schema.string(), line: tool.schema.number().int().min(1) })).max(4),
+        })).max(30),
+      },
+      execute: async (args, ctx) => checkpoint(args, ctx.sessionID, { bundles, root: directory, out: process.env.OUT_DIR || "/out" }),
+    }) };
+  }
+  return {
+  tool: reviewTools,
   "tool.execute.before": async (input, output) => {
     if (process.env.SPEC_GATE === "1" && ["edit", "write", "apply_patch"].includes(input.tool) && !existsSync(SPEC_FILE()))
       throw new Error("Rejected: check the task first (the first step in your instructions). Call spec_checked with "
@@ -48,4 +73,5 @@ export const Boxie = async ({ directory }) => ({
       }
     }
   },
-});
+  };
+};

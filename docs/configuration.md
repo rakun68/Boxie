@@ -82,13 +82,16 @@ A review that installs nothing (`REVIEW_SETUP=0`, every advise review) is capped
 | `REVIEW_STEPS` | 90 | Step cap of a gate review's session |
 | `REVIEW_SETUP` | 1 | 0 skips `SETUP_CMD` on reviews. A failed setup never stops a review; the reviewer is told dependencies are missing |
 | `REVIEW_REPORT_MIN` | 5 | Minutes kept back from `TIMEOUT_MIN` for a review cut at its limit to write the findings it has |
-| `REVIEW_PART_STEPS`, `REVIEW_PART_FILES`, `REVIEW_PART_MIN` | 30, 3, 7 | Advise: step cap, files at most and minutes per part. A part cut at its minutes writes the findings it has |
+| `REVIEW_PART_STEPS`, `REVIEW_PART_FILES`, `REVIEW_PART_MIN` | 30, 3, 7 | Advise: step cap, target files and minutes per part. Related groups and the bundle-count cap can exceed the file target. Checkpoints preserve findings on timeout; coverage remains partial |
 | `REVIEW_FANOUT`, `REVIEW_PARTS_MAX` | 6, 8 | Advise: parts at once, parts at most (`lib/bundle.mjs`, `image/fanout.mjs`) |
-| `REVIEW_FILTER`, `REVIEW_FILTER_MIN`, `FILTER_MODEL` | 1, 3, the reviewer's | Advise: one call scores the merged findings against the diff; those under the minimum go to `filtered.json` (`image/filter.mjs`) |
+| `REVIEW_FILTER`, `REVIEW_FILTER_MIN`, `FILTER_MODEL` | 1, 6, the reviewer's | Advise: validate each candidate once using changed-code windows and captured source evidence. Batches of 8, at most 3 requests concurrently; lower scores go to `filtered.json`. Failed/unscored candidates remain explicitly unverified |
 | `OCR_BIN`, `OCR_EFFORT`, `OCR_CONCURRENCY`, `OCR_TIMEOUT_MIN` | `ocr` on PATH, medium, 8, 15 | The `review-both-ocr` role: open-code-review on the host (`lib/ocr.mjs`) |
 
 An advise review uses open-code-review's per-language checklists (`ocr delegate rule`) when its binary
 is found, and places each finding on its line from the code it quotes (`image/anchor.mjs`).
+It defaults to one both-axes reviewer, regardless of `REVIEW_MODE`; explicit `--roles`,
+`--review-mode` or project `REVIEW_ROLES` still win. No OCR review is launched by this pipeline.
+See [the unified review pipeline](unified-review.md) for checkpoints, verification and coverage.
 
 ## Caches
 
