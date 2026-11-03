@@ -80,3 +80,17 @@ test("docs: bare paths and {path, reason} both listed; area docs and duty paths 
   for (const p of ["docs/ledger.md", "GLOSSARY.md", "docs/schema.md"]) assert.ok(meta.scope.includes(p), p);
   assert.ok(!meta.scope.includes("AGENTS.md"));
 });
+
+// A large repository's `ls-tree -r` is past execFileSync's default 1 MB buffer: ClickHouse failed with
+// spawnSync git ENOBUFS before review (AACR bench, 2026-11-03). 14,000 index entries of one blob, no files.
+test("a base with more than 1 MB of tracked paths still packs", () => {
+  const dir = repo();
+  const git = (args, input) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", input, maxBuffer: 64 * 1024 * 1024 });
+  const blob = git(["hash-object", "-w", "--stdin"], "x\n").trim();
+  const dirName = "vendor/" + "d".repeat(80);
+  git(["update-index", "--index-info"], Array.from({ length: 14000 }, (_, i) => `100644 ${blob}\t${dirName}/f${i}.c`).join("\n") + "\n");
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "big"]);
+  assert.ok(git(["ls-tree", "-r", "--name-only", "HEAD"]).length > 1024 * 1024);
+  const body = pack(dir, "---\nfiles: [src/ledger/db.ts]\n---\nAdd a column.\n");
+  assert.match(body, /Add a column\./);
+});
