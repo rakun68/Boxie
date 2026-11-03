@@ -113,3 +113,9 @@ Then ask Claude Code to "delegate this to Boxie".
 | [docs/internals.md](docs/internals.md) | inside the container, speed, engine, source files |
 | [docs/known-gaps.md](docs/known-gaps.md) | known bugs and gaps, with what fixed them |
 | [research/](research/) | the evidence behind the design |
+
+## Credits
+
+The `review-both-ocr` role runs [open-code-review](https://github.com/alibaba/open-code-review) by Alibaba
+(Apache-2.0), installed unmodified in the worker image. Boxie's review consolidation and prompts
+draw on its design, see [research/ocr-design.md](research/ocr-design.md).

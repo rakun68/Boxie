@@ -1,0 +1,83 @@
+# AACR-Bench: Boxie hybrid review against open-code-review
+
+Date: 2026-11-04. Pipeline frozen at `ca56fb2`.
+
+## Setup
+
+- **Boxie arm** (`hybrid`): `delegate.sh review --roles review-both-gemini,review-both-ocr --advise`.
+  The fanout reviewer runs at medium effort and OCR runs in the worker image, both in parallel. Then
+  `lib/consolidate.mjs` groups the findings by problem and scores each group 0-10, one model call per file.
+  A group scoring below 5 is dropped. A group found only by the fanout reviewer is dropped below 7.
+  The prose pass is off.
+- **OCR arm**: OCR alone, a fresh run in the same image (high effort, 30-minute groups).
+- **Judge**: the AACR scorer, file_semantic mode. Ground truth and judge criteria are unchanged.
+- One review at a time, on an otherwise idle machine, so the times are comparable.
+- Dev set, used for tuning: lvgl e526b2a, ollama 2ed14f2, ClickHouse 3143520, mpv 0729afe, cline 2195a68.
+- Held-out set, never tuned on: immich 5f47591 and elastic a9973f6 (handpicked), plus valkey 8b2137d,
+  svelte 4bf1f91 and dbeaver dc67ca7 (random).
+
+## Held-out set (label `held1`)
+
+| Slice | Arm | P | R | Hits / notes | Hits / expected | Seconds | Tokens |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| All 5 | hybrid | 0.350 | 0.103 | 7/20 | 7/68 | 3058 | 38.6M |
+| All 5 | OCR | 0.250 | 0.088 | 6/24 | 6/68 | 2526 | 6.9M |
+| Handpicked | hybrid | 0.800 | 0.114 | 4/5 | 4/35 | 1111 | 15.5M |
+| Handpicked | OCR | 0.750 | 0.086 | 3/4 | 3/35 | 1008 | 1.2M |
+| Random | hybrid | 0.200 | 0.091 | 3/15 | 3/33 | 1947 | 23.2M |
+| Random | OCR | 0.150 | 0.091 | 3/20 | 3/33 | 1518 | 5.7M |
+
+Per PR, as P / R:
+
+| PR | hybrid | OCR |
+| --- | --- | --- |
+| immich | 0.667 / 0.071 | 0.667 / 0.071 |
+| elastic | 1.0 / 0.286 | 1.0 / 0.143 |
+| valkey | 0.0 / 0.0 | 0.111 / 0.125 |
+| svelte | 0.0 / 0.0 | 0.0 / 0.0 |
+| dbeaver | 0.375 / 0.273 | 0.333 / 0.182 |
+
+The goal was P ≥ OCR and R ≥ OCR, with at least one strictly greater. The hybrid meets it on the pooled
+set and on each slice. The margin is one hit (7 against 6), so this sample cannot separate the two arms
+with confidence.
+
+Svelte's repo was missing from the bench checkout, so its first run failed in 0.13 s on both arms. That
+evidence is kept in `results/smoke/held1/startup-failed-norepo/`. Svelte was rerun once, on the same frozen
+pipeline. `boxie_arm.py` now exits when the repo is missing, and no longer records a startup failure.
+
+## Dev set
+
+| Arm | P | R | Hits / notes | Hits / expected | Seconds | Tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| hybrid, as run (`dev2`, prose on, min 2) | 0.463 | 0.395 | 31/67 | 32/81 | 3189 | 54.4M |
+| hybrid, rescored with the frozen policy (`off8`) | 0.551 | 0.346 | 27/49 | 28/81 | n/a | n/a |
+| OCR, fresh (`dev2`) | 0.434 | 0.296 | 23/53 | 24/81 | 3116 | 13.3M |
+
+The `off8` row reuses `dev2`'s raw reviews and runs only the new consolidation offline (`bench/aacr/offline.py`).
+
+## What moved the numbers
+
+- **Consolidation by problem.** The old merge needed the same category and lines within 3 of each other,
+  so OCR and fanout findings almost never joined. A single model call per file now groups findings by
+  "the same fix resolves both" and keeps the most specific one.
+- **Score bands**, pooled over the offline variants:
+
+  | Band | Hits |
+  | --- | ---: |
+  | Score 2-4 | 8/67 |
+  | Score 5 | 10/32 |
+  | Score 6-10 | 153/298 |
+  | Fanout alone at 5-6 | 0/12 |
+  | Fanout alone at 7+ | 10/29 |
+
+  These numbers set min 5 and fanout-only min 7.
+- **Prose pass**: a model check of the added text's wording. It hit 2 of 10, so it is off.
+
+## Gaps left
+
+- **Cost.** The hybrid uses 4-6x OCR's tokens. Wall time is 2-21% longer.
+- **Part timeouts.** Fanout parts hit the 7-minute cap on most PRs. Their findings so far are kept.
+- **Dropped real issue.** On valkey, the only hit OCR found was also in the hybrid's OCR half, but
+  consolidation scored it 2 ("asks to verify") and dropped it. The rule was not retuned on held-out data.
+- **Low recall.** Recall is low for both arms on held-out data (about 0.1). The ground truth has many
+  notes that neither arm finds.

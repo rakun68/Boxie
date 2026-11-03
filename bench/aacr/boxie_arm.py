@@ -80,6 +80,8 @@ def main():
         if out.exists():
             continue
         repo = ev / "repo" / inst["repo"].replace("/", "__")
+        if not (repo / ".git").exists():
+            sys.exit(f"boxie_arm: {repo} is not cloned")
         project = repo.name.lower()
         name = f"aacr-{o.label}-" + iid.split("@")[1]
         sh("git", "-C", str(repo), "branch", "-f", "aacr-base", inst["base_commit"])
