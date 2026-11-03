@@ -39,7 +39,8 @@ def versions(env_file):
     return {"boxie": sh("git", "-C", BOX, "rev-parse", "HEAD").stdout.strip(),
             "image": sh("podman", "image", "inspect", "boxie:latest", "--format", "{{.Id}}").stdout.strip(),
             "ocr": sh("podman", "run", "--rm", "--entrypoint", "ocr", "boxie:latest", "version").stdout.strip().splitlines()[:1],
-            "model": MODEL, "settings": env_file.read_text(encoding="utf-8").splitlines()}
+            "model": MODEL, "roles": {"boxie": "review-both-gemini@high --advise", "ocr": "review-both-ocr"},
+            "settings": env_file.read_text(encoding="utf-8").splitlines()}
 
 
 SCORE = r"""
@@ -118,7 +119,7 @@ def main():
                 if arm == "merged":
                     save(result, merged_result(inst, out, o.label))
                 else:
-                    roles = "review-both-gemini" if arm == "boxie" else "review-both-ocr"
+                    roles = "review-both-gemini@high" if arm == "boxie" else "review-both-ocr"  # @high: the bench30 baseline's setting
                     p = sh(sys.executable, BOX / "bench/aacr/boxie_arm.py", "--label", f"{o.label}-{arm}", "--sample", "bench30",
                            "--only", iid, "--roles", roles, *(["--advise"] if arm == "boxie" else []), env=env, timeout=7200)
                     made = EV / "results/bench30/boxie" / f"{o.label}-{arm}" / (iid + ".json")
