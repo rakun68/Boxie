@@ -1479,7 +1479,7 @@ cmd_review() {
     [ -f "$prose_dir/findings.json" ] && dirs+=("$(winpath "$prose_dir")")
     # With the diff, one model call per file joins the reviewers' repeats and scores each problem
     # (lib/consolidate.mjs); CONSOLIDATE_MODEL empty keeps the deterministic merge only.
-    CONSOLIDATE_MODEL="${CONSOLIDATE_MODEL:-}" CONSOLIDATE_MIN="${CONSOLIDATE_MIN:-2}" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
+    CONSOLIDATE_MODEL="${CONSOLIDATE_MODEL:-}" CONSOLIDATE_MIN="${CONSOLIDATE_MIN:-5}" CONSOLIDATE_SOLO_MIN="${CONSOLIDATE_SOLO_MIN:-7}" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
       node "$(winpath "$BOX/lib/merge-reviews.mjs")" "$(winpath "$merged")" --diff "$(winpath "$tdir/change.diff")" "${dirs[@]}" && echo "merged findings: $merged"
   fi
   [ "$unfinished" = 0 ] || return 3

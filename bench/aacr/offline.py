@@ -5,7 +5,7 @@
     python bench/aacr/offline.py --label off1 --ids lvgl__lvgl@e526b2a --variants ocr=ocr2:raw,cons=ocr2+box2:cons
 
 A source is `ocr30` (bench30 OCR result), `ocrN` (the smokeN OCR run) or `boxN` / `box30` (the smokeN or
-fresh-high Boxie run), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
+fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
 cons (merge-reviews with the diff: one model call per file). Results go to
 evaluation/results/offline/<label>/; state.json holds every score. Nothing is retried.
 """
@@ -34,6 +34,9 @@ def source_dir(src, inst, work):
             p = sh("node", BOX / "lib/prose.mjs", work / "change.diff", d)
             print("  " + (p.stdout + p.stderr).strip()[-300:], flush=True)
         return d
+    if src.startswith("h") and ":" in src:
+        role, label = src[1:].split(":")
+        return BOX / "runs" / project / f"aacr-{label}-hybrid-{sha}-review-both-{'ocr' if role == 'ocr' else 'gemini'}"
     if src.startswith("ocr"):
         return BOX / "runs" / project / f"aacr-smoke{src[3:]}-ocr-{sha}-review-both-ocr"
     label = "fresh-high" if src == "box30" else f"smoke{src[3:]}-boxie"
@@ -72,7 +75,7 @@ def main():
         diff.write_text(sh("git", "-C", repo, "diff", inst["base_commit"] + "..." + inst["head_commit"]).stdout, encoding="utf-8")
         for spec in o.variants.split(","):
             name, rest = spec.split("=")
-            srcs, mode = rest.split(":")
+            srcs, mode = rest.rsplit(":", 1)
             key = f"{iid}|{name}"
             if state.get(key, {}).get("score"):
                 continue

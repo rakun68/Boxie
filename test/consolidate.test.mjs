@@ -67,3 +67,12 @@ test("prose: a finding stays only when its quote is on an added line, and takes 
   assert.match(got[0].scenario, /should read `It supports`/);
   assert.match(chunks(diff).join(""), /### d\.rst\n\+2: It support one way binding\./);
 });
+
+test("consolidate: a problem only the container reviewer raised needs the higher bar", async () => {
+  const lists = [{ by: "ocr", findings: [{ file: "a.c", line: 2, issue: "y leaks", source: "ocr" }] },
+    { by: "fanout", findings: [{ file: "a.c", line: 2, issue: "y overflows" }, { file: "a.c", line: 3, issue: "z races" }] }];
+  const r = await consolidate(lists, DIFF, { model: "m", base: "b", key: "k",
+    fetchImpl: answer('[{"ids":[1],"best":1,"score":6},{"ids":[2],"best":2,"score":6},{"ids":[3],"best":3,"score":7}]') });
+  assert.deepEqual(r.kept.map((f) => f.issue).sort(), ["y leaks", "z races"]);
+  assert.deepEqual(r.dropped.map((f) => f.issue), ["y overflows"]);
+});
