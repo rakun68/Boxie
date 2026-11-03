@@ -1,16 +1,17 @@
 // Keeps /out/progress.json current while a run executes, for `delegate.sh stats live` and the TUI.
-// Reads /out/phase (written by run-task.sh) and the new lines of /out/events.jsonl once a second.
+// Reads /out/phase (written by run-task.sh) and the new lines of /out/events.jsonl once a second; a
+// review in parts (fanout.mjs) writes /out/parts/<i>.events.jsonl instead, counted per part and in total.
 // One small process for the whole run; it exits when /out/phase says "done".
 import fs from "node:fs";
 
-const OUT = "/out";
+const OUT = process.env.OUT_DIR || "/out";
 const started = Date.now();
 const p = {
   phase: "setup", started, model: process.env.MODEL || "", role: process.env.ROLE || "",
   steps: 0, tools: 0, last: null, tokens: { input: 0, output: 0, cache_read: 0 },
-  questions_open: 0, blocked: false, autofix: 0,
+  questions_open: 0, blocked: false, autofix: 0, parts: [],
 };
-let offset = 0, rest = "";
+const seen = new Map();   // file -> {offset, rest}
 
 const rel = (s) => String(s ?? "").replace(/^\/work\/repo\//, "");
 function what(tool, i = {}) {
@@ -22,24 +23,39 @@ function what(tool, i = {}) {
   return "";
 }
 
+// The event files to follow. Fanout joins its parts into /out/events.jsonl at the end; reading both
+// would count every step twice, so with parts present only they count.
+function files() {
+  let parts = [];
+  try { parts = fs.readdirSync(`${OUT}/parts`).filter((f) => /^\d+\.events\.jsonl$/.test(f)); } catch { /* not fanned out */ }
+  return parts.length ? parts.map((f) => ({ file: `${OUT}/parts/${f}`, n: parseInt(f, 10) })) : [{ file: `${OUT}/events.jsonl`, n: 0 }];
+}
+
 function read() {
+  for (const { file, n } of files()) readFile(file, n);
+}
+
+function readFile(file, n) {
   let fd;
-  try { fd = fs.openSync(`${OUT}/events.jsonl`, "r"); } catch { return; }
+  try { fd = fs.openSync(file, "r"); } catch { return; }
+  const st = seen.get(file) ?? { offset: 0, rest: "" };
+  seen.set(file, st);
+  const one = n ? (p.parts[n - 1] ??= { steps: 0, tools: 0 }) : null;
   try {
     const size = fs.fstatSync(fd).size;
-    if (size < offset) { offset = 0; rest = ""; }   // a new agent round rewrote the file
-    if (size === offset) return;
-    const buf = Buffer.alloc(size - offset);
-    fs.readSync(fd, buf, 0, buf.length, offset);
-    offset = size;
-    const lines = (rest + buf.toString("utf8")).split("\n");
-    rest = lines.pop();
+    if (size < st.offset) { st.offset = 0; st.rest = ""; }   // a new agent round rewrote the file
+    if (size === st.offset) return;
+    const buf = Buffer.alloc(size - st.offset);
+    fs.readSync(fd, buf, 0, buf.length, st.offset);
+    st.offset = size;
+    const lines = (st.rest + buf.toString("utf8")).split("\n");
+    st.rest = lines.pop();
     for (const l of lines) {
       let e; try { e = JSON.parse(l); } catch { continue; }
       const part = e.part || {};
-      if (e.type === "step_start") p.steps++;
+      if (e.type === "step_start") { p.steps++; if (one) one.steps++; }
       else if (e.type === "tool_use") {
-        p.tools++;
+        p.tools++; if (one) one.tools++;
         p.last = { tool: String(part.tool || "?").replace(/^orchestrator_/, ""), what: what(part.tool, part.state?.input), ts: e.timestamp || Date.now() };
       } else if (e.type === "step_finish" && part.tokens) {
         p.tokens.input += part.tokens.input || 0;
@@ -55,7 +71,7 @@ function questionsOpen() {
   try {
     for (const f of fs.readdirSync(`${OUT}/questions`)) {
       const m = f.match(/^(\d+)\.md$/);
-      if (m && !fs.existsSync(`/in/answers/${m[1]}.md`) && !fs.existsSync(`${OUT}/questions/${m[1]}.timeout`)) n++;
+      if (m && !fs.existsSync(`${process.env.IN_DIR || "/in"}/answers/${m[1]}.md`) && !fs.existsSync(`${OUT}/questions/${m[1]}.timeout`)) n++;
     }
   } catch { /* no questions yet */ }
   return n;

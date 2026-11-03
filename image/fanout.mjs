@@ -8,7 +8,7 @@
 // In: /in/bundles.json [{files, diff, rules, others}], /out/prompt.md (preamble, context, task).
 // Env: OC_MODEL, AGENT, ATTACH (server URL or ""), VARIANT, BRANCH, AGENT_MIN and REVIEW_PART_MIN (the
 //      smaller is each part's minutes),
-//      FANOUT (parts at once, default 6), REVIEW_REPORT_MIN (default 5); REVIEW_FILTER (0: off),
+//      FANOUT (parts at once, default 8: lib/bundle.mjs makes at most 8), REVIEW_REPORT_MIN (default 5); REVIEW_FILTER (0: off),
 //      REVIEW_FILTER_MIN (default 6), FILTER_MODEL (default MODEL), OMNIROUTE_BASE_URL, OMNIROUTE_API_KEY.
 // Out: /out/parts/<i>.{prompt.md,events.jsonl,final.md}, /out/events.jsonl (all parts), /out/final.md,
 //      /out/findings.json, /out/fanout.json. Exit 0, 124 when a part hit its time limit, else 1.
@@ -81,7 +81,11 @@ function recover(ev) {
   spawnSync("node", ["--no-warnings", path.join(path.dirname(fileURLToPath(import.meta.url)), "recover-final.mjs"), ev, DB, sid], { stdio: "ignore" });
 }
 
-const PART_MIN = Math.min(Number(env.AGENT_MIN || 30), Number(env.REVIEW_PART_MIN || 7));
+async function abort(sid) {
+  if (env.ATTACH && sid) await fetch(`${env.ATTACH}/session/${sid}/abort`, { method: "POST", signal: AbortSignal.timeout(5000) }).catch(() => {});
+}
+
+const PART_MIN =Math.min(Number(env.AGENT_MIN || 30), Number(env.REVIEW_PART_MIN || 7));
 
 async function part(b, i, n, base) {
   const dir = path.join(OUT, "parts"); fs.mkdirSync(dir, { recursive: true });
@@ -90,6 +94,9 @@ async function part(b, i, n, base) {
   fs.writeFileSync(path.join(dir, `${i + 1}.prompt.md`), prompt);
   const title = `${env.BRANCH || "review"}-part${i + 1}`;
   let exit = await opencode(["--title", title], prompt, PART_MIN, ev);
+  // Killing the attached CLI leaves its session running on the server (a stub-model check, 2026-11-03,
+  // saw model calls go on after `timeout` ended `run`): stop it before reading the store.
+  if (exit === 124 || exit === 137) await abort(lastText(fs.readFileSync(ev, "utf8")).sid);
   recover(ev);
   let { last, sid } = lastText(fs.readFileSync(ev, "utf8"));
   // A part that died before its session started (a server hiccup, a locked database) runs once more.
@@ -104,7 +111,6 @@ async function part(b, i, n, base) {
   let saved = readCheckpoint(OUT, i + 1);
   if ((exit === 124 || exit === 137) && sid) {
     cut = "timeout";
-    if (env.ATTACH) await fetch(`${env.ATTACH}/session/${sid}/abort`, { method: "POST", signal: AbortSignal.timeout(5000) }).catch(() => {});
     if (!saved) await opencode(["--session", sid, "--title", title, "Time is up. Do not read or run anything more. Write your findings now, ending with the `boxie-findings` block."], null, Number(env.REVIEW_REPORT_MIN || 5), ev);
     recover(ev);
     ({ last } = lastText(fs.readFileSync(ev, "utf8")));
@@ -131,7 +137,7 @@ export function reviewStatus(results) {
 export async function main() {
   const bundles = JSON.parse(fs.readFileSync(path.join(IN, "bundles.json"), "utf8"));
   const base = fs.readFileSync(path.join(OUT, "prompt.md"), "utf8");
-  const n = bundles.length, width = Math.max(1, Number(env.FANOUT || 6));
+  const n = bundles.length, width = Math.max(1, Number(env.FANOUT || 8));
   const results = new Array(n);
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(width, n) }, async () => {

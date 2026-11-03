@@ -253,7 +253,7 @@ short and cached, and source reads faster than bytecode.'
     fanned=1
     log "review in $(jq length /in/bundles.json) part(s), ${REVIEW_FANOUT:-4} at once"
     OC_MODEL="$OC_MODEL" AGENT="$agent_name" ATTACH="${attach_args[1]:-}" VARIANT="${VARIANT:-}" BRANCH="$BRANCH" AGENT_MIN="$agent_min" \
-      FANOUT="${REVIEW_FANOUT:-4}" node /opt/boxie/fanout.mjs 2>>"$OUT/harness.log"
+      FANOUT="${REVIEW_FANOUT:-8}" node /opt/boxie/fanout.mjs 2>>"$OUT/harness.log"
     agent_exit=$?
   else
   timeout --kill-after=30 "${agent_min}m" \
