@@ -1,7 +1,9 @@
-// lib/consolidate.mjs: several reviewers' findings joined by problem and scored, one call per file.
+// lib/consolidate.mjs: several reviewers' findings joined by problem and scored, one call per file;
+// lib/prose.mjs: wording findings kept only when their quote is on an added line.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { consolidate, parseGroups, fileDiff } from "../lib/consolidate.mjs";
+import { place, chunks } from "../lib/prose.mjs";
 
 const DIFF = `diff --git a/a.c b/a.c
 --- a/a.c
@@ -47,4 +49,21 @@ test("consolidate: a failed call keeps the file's findings", async () => {
 test("consolidate: the file's diff is numbered on the new side", () => {
   assert.match(fileDiff(DIFF, "a.c"), /\+2: int y = f\(\);/);
   assert.equal(fileDiff(DIFF, "missing.c"), "");
+});
+
+test("prose: a finding stays only when its quote is on an added line, and takes that line", () => {
+  const diff = DIFF + `diff --git a/d.rst b/d.rst
+--- a/d.rst
++++ b/d.rst
+@@ -1,1 +1,2 @@
+ Intro.
++It support one way binding.
+`;
+  const got = place([{ file: "d.rst", quote: "It support", issue: "Subject-verb agreement.", fix: "It supports" },
+    { file: "d.rst", quote: "Intro.", issue: "unchanged line" }, { file: "x.rst", quote: "It support", issue: "wrong file" },
+    { file: "d.rst", quote: "It support", issue: "repeat" }], diff);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].line, 2);
+  assert.match(got[0].scenario, /should read `It supports`/);
+  assert.match(chunks(diff).join(""), /### d\.rst\n\+2: It support one way binding\./);
 });

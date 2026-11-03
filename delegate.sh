@@ -1423,6 +1423,14 @@ cmd_review() {
   # so every reviewer of this round gets the same text; a ledger error never stops the review.
   local examples; examples="$(node "$(winpath "$BOX/lib/examples.mjs")" "$PROJECT" 2>/dev/null || true)"
   local names=() prompt prior
+  git -C "$REPO" diff "$base" "$branch" -- "${pspec[@]}" >"$tdir/change.diff" 2>/dev/null || true
+  # Advise: the change's added text checked for wording (lib/prose.mjs), beside the reviewers.
+  local prose_dir=""
+  if [ "$kind" = advise ] && [ -n "${PROSE_MODEL:-}" ] && [ -n "${OMNIROUTE_API_KEY:-}" ]; then
+    prose_dir="$BOX/runs/$PROJECT/${prefix:-rv-$stamp}-prose"
+    PROSE_MODEL="$PROSE_MODEL" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="$OMNIROUTE_API_KEY" \
+      node "$(winpath "$BOX/lib/prose.mjs")" "$(winpath "$tdir/change.diff")" "$(winpath "$prose_dir")" >"$tdir/prose.log" 2>&1 &
+  fi
   for r in ${roles//,/ }; do
     case "${r%%@*}" in
       review-spec|review-spec-alt) prompt="$BOX/lib/ticket/review-spec.md"; prior="$prior_spec" ;;
@@ -1464,12 +1472,13 @@ cmd_review() {
   for n in "${names[@]}"; do echo "$n: $(cat "$BOX/runs/$PROJECT/$n/verdict.txt" 2>/dev/null || echo "no verdict")"; done
   # Several reviewers: one list, repeats merged (lib/merge-reviews.mjs). Merged independent passes
   # raise recall; the repeats would cost precision (research/review-tools-survey.md).
-  if [ "${#names[@]}" -gt 1 ]; then
+  [ -n "$prose_dir" ] && cat "$tdir/prose.log"
+  if [ "${#names[@]}" -gt 1 ] || [ -f "$prose_dir/findings.json" ]; then
     local merged="$BOX/runs/$PROJECT/${prefix:-rv-$stamp}-merged.json" dirs=()
     for n in "${names[@]}"; do dirs+=("$(winpath "$BOX/runs/$PROJECT/$n")"); done
+    [ -f "$prose_dir/findings.json" ] && dirs+=("$(winpath "$prose_dir")")
     # With the diff, one model call per file joins the reviewers' repeats and scores each problem
     # (lib/consolidate.mjs); CONSOLIDATE_MODEL empty keeps the deterministic merge only.
-    git -C "$REPO" diff "$base" "$branch" -- "${pspec[@]}" >"$tdir/change.diff" 2>/dev/null || true
     CONSOLIDATE_MODEL="${CONSOLIDATE_MODEL:-}" CONSOLIDATE_MIN="${CONSOLIDATE_MIN:-2}" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
       node "$(winpath "$BOX/lib/merge-reviews.mjs")" "$(winpath "$merged")" --diff "$(winpath "$tdir/change.diff")" "${dirs[@]}" && echo "merged findings: $merged"
   fi
