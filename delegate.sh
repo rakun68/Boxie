@@ -1467,7 +1467,11 @@ cmd_review() {
   if [ "${#names[@]}" -gt 1 ]; then
     local merged="$BOX/runs/$PROJECT/${prefix:-rv-$stamp}-merged.json" dirs=()
     for n in "${names[@]}"; do dirs+=("$(winpath "$BOX/runs/$PROJECT/$n")"); done
-    node "$(winpath "$BOX/lib/merge-reviews.mjs")" "$(winpath "$merged")" "${dirs[@]}" && echo "merged findings: $merged"
+    # With the diff, one model call per file joins the reviewers' repeats and scores each problem
+    # (lib/consolidate.mjs); CONSOLIDATE_MODEL empty keeps the deterministic merge only.
+    git -C "$REPO" diff "$base" "$branch" -- "${pspec[@]}" >"$tdir/change.diff" 2>/dev/null || true
+    CONSOLIDATE_MODEL="${CONSOLIDATE_MODEL:-}" CONSOLIDATE_MIN="${CONSOLIDATE_MIN:-2}" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="${OMNIROUTE_API_KEY:-}" \
+      node "$(winpath "$BOX/lib/merge-reviews.mjs")" "$(winpath "$merged")" --diff "$(winpath "$tdir/change.diff")" "${dirs[@]}" && echo "merged findings: $merged"
   fi
   [ "$unfinished" = 0 ] || return 3
 }

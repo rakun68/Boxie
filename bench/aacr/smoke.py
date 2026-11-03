@@ -3,8 +3,10 @@
     source "$AACR_DIR/env.sh"
     python bench/aacr/smoke.py --label smoke1 --ids lvgl__lvgl@e526b2a,ollama__ollama@2ed14f2
 
-Arms: `boxie` (review-both-gemini, advise: the fanout reviewer), `ocr` (review-both-ocr: open-code-review in the
-worker image), and `merged` (both runs merged by lib/merge-reviews.mjs, no extra review). Source, image and
+Arms: `hybrid` (Boxie's advise review: the fanout reviewer at medium effort and open-code-review side by side,
+consolidated by lib/consolidate.mjs), `boxie` (the fanout reviewer alone, high effort: the bench30 baseline),
+`ocr` (review-both-ocr: open-code-review in the worker image), and `merged` (the boxie and ocr runs merged by
+lib/merge-reviews.mjs, no extra review). Source, image and
 settings are recorded in <out>/versions.json before the first review and checked before each one; a change
 stops the run. <out>/state.json is the one durable record (atomic writes, one writer): a rerun resumes it.
 Each judge call runs in its own process, so no client or lock outlives its event loop. Nothing is retried:
@@ -20,6 +22,8 @@ EV = Path(os.environ.get("AACR_DIR", BOX / "runs/.tmp/aacr")) / "aacr-bench/eval
 PY = str(EV / ".venv/Scripts/python.exe") if os.name == "nt" else str(EV / ".venv/bin/python")
 MODEL = "antigravity/gemini-3.8-flash-high"
 FROZEN = ["lib", "image", "delegate.sh", "boxie.conf", "bench/aacr"]
+# @high: the bench30 baseline's setting. hybrid takes the advise default (REVIEW_PART_EFFORT, medium).
+ROLES = {"boxie": "review-both-gemini@high", "hybrid": "review-both-gemini,review-both-ocr", "ocr": "review-both-ocr"}
 
 
 def sh(*a, **k):
@@ -39,7 +43,7 @@ def versions(env_file):
     return {"boxie": sh("git", "-C", BOX, "rev-parse", "HEAD").stdout.strip(),
             "image": sh("podman", "image", "inspect", "boxie:latest", "--format", "{{.Id}}").stdout.strip(),
             "ocr": sh("podman", "run", "--rm", "--entrypoint", "ocr", "boxie:latest", "version").stdout.strip().splitlines()[:1],
-            "model": MODEL, "roles": {"boxie": "review-both-gemini@high --advise", "ocr": "review-both-ocr"},
+            "model": MODEL, "roles": ROLES,
             "settings": env_file.read_text(encoding="utf-8").splitlines()}
 
 
@@ -79,7 +83,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True)
     ap.add_argument("--ids", required=True, help="comma-separated instance ids from data/bench30.jsonl")
-    ap.add_argument("--arms", default="boxie,ocr,merged")
+    ap.add_argument("--arms", default="hybrid,ocr")
     o = ap.parse_args()
     os.environ.setdefault("JUDGE_MODEL", MODEL)
     os.environ.setdefault("OCR_LLM_MODEL", MODEL)
@@ -119,9 +123,8 @@ def main():
                 if arm == "merged":
                     save(result, merged_result(inst, out, o.label))
                 else:
-                    roles = "review-both-gemini@high" if arm == "boxie" else "review-both-ocr"  # @high: the bench30 baseline's setting
                     p = sh(sys.executable, BOX / "bench/aacr/boxie_arm.py", "--label", f"{o.label}-{arm}", "--sample", "bench30",
-                           "--only", iid, "--roles", roles, *(["--advise"] if arm == "boxie" else []), env=env, timeout=7200)
+                           "--only", iid, "--roles", ROLES[arm], *(["--advise"] if arm != "ocr" else []), env=env, timeout=7200)
                     made = EV / "results/bench30/boxie" / f"{o.label}-{arm}" / (iid + ".json")
                     if not made.exists():
                         state[key] = {"error": "no result", "stderr": p.stderr[-1500:]}

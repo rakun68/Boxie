@@ -97,8 +97,11 @@ def main():
             per_run.append({"run": run.name, "verdict": verdict, "seconds": s.get("seconds"), "agent_exit": s.get("agent_exit"),
                             "findings": len(read_json(run / "findings.json", []) or []), "tokens": run_tokens(run.name)})
         if len(runs) > 1:
-            merged = out_dir / (iid.replace("/", "__") + ".merged.json")
-            sh("node", str(BOX / "lib/merge-reviews.mjs"), str(merged), *[str(r) for r in runs])
+            # The review's own merged list (delegate.sh: consolidated with the diff), as a user gets it.
+            merged = BOX / "runs" / project / f"{name}-merged.json"
+            if not merged.exists():
+                merged = out_dir / (iid.replace("/", "__") + ".merged.json")
+                sh("node", str(BOX / "lib/merge-reviews.mjs"), str(merged), *[str(r) for r in runs])
             findings = read_json(merged, []) or []
         else:
             findings = read_json(runs[0] / "findings.json", []) or []
