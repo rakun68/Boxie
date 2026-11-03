@@ -39,6 +39,24 @@ def run_tokens(run):
         return None
 
 
+def outcome(per_run):
+    """One label for the review: a startup failure, a timeout with partial findings, or a complete review with or
+    without findings. The scorer counts all of them alike; reports must not (AACR bench30, 2026-11-03)."""
+    v = [r["verdict"].split()[1] if r["verdict"].startswith("verdict ") else "none" for r in per_run]
+    if any(x in ("interrupted", "error", "none") for x in v):
+        return "startup_failed"
+    if any(x == "timeout" for x in v):
+        return "timeout_partial"
+    return "complete_findings" if any(r["findings"] for r in per_run) else "complete_empty"
+
+
+def summary_tokens(per_run):
+    """Ledger tokens in the OCR summary fields evaluate.py reads (input includes cache reads, as OCR's does)."""
+    t = [r["tokens"] or {} for r in per_run]
+    return {"input_tokens": sum((x.get("input") or 0) + (x.get("cache_read") or 0) for x in t),
+            "output_tokens": sum((x.get("output") or 0) + (x.get("reasoning") or 0) for x in t)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True)
@@ -69,7 +87,7 @@ def main():
         t0 = time.monotonic()
         p = sh(BASH, str(BOX / "delegate.sh"), "review", repo.as_posix(), "aacr-head", "--against", "aacr-base",
                "--roles", ",".join(roles), "--name", name, *(["--advise"] if o.advise else []),
-               env={**os.environ, "BOXIE_PROJECT_ENV": str(BOX / "projects/bench.env"), "BOXIE_HERDR": "0"})
+               env={"BOXIE_PROJECT_ENV": str(BOX / "projects/bench.env"), **os.environ, "BOXIE_HERDR": "0"})
         secs = time.monotonic() - t0
         runs = [BOX / "runs" / project / f"{name}-{r.split('@')[0]}" for r in roles]
         per_run = []
@@ -90,8 +108,9 @@ def main():
                     for f in findings if isinstance(f, dict)]
         out.write_text(json.dumps({"instance_id": iid, "repo": inst["repo"], "reviewer": "boxie", "label": o.label, "roles": roles,
                                    "advise": o.advise, "duration_seconds": round(secs, 2), "exit_code": p.returncode, "runs": per_run,
-                                   "review": {"comments": comments}, "stderr": p.stderr[-4000:]}, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(iid, "exit", p.returncode, "comments", len(comments), "secs", round(secs),
+                                   "outcome": outcome(per_run),
+                                   "review": {"comments": comments, "summary": summary_tokens(per_run)}, "stderr": p.stderr[-4000:]}, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(iid, outcome(per_run), "exit", p.returncode, "comments", len(comments), "secs", round(secs),
               "|", "; ".join(f"{r['run']}: {r['verdict'][:40]}" for r in per_run), flush=True)
 
 

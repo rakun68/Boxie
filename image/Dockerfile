@@ -4,12 +4,16 @@
 FROM node:24-bookworm
 
 ARG OPENCODE_VERSION=1.19.4
+ARG OCR_VERSION=1.13.4
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git jq ripgrep python3 make g++ ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g "opencode-ai@${OPENCODE_VERSION}" && npm cache clean --force
+# open-code-review, the review engine lib/ocr.mjs runs in this image (ROLE_* = ocr:<model>): read-only
+# tools only, the repository mounted read-only. The AACR bench measured this version (2026-11-03).
+RUN npm install -g "@alibaba-group/open-code-review@${OCR_VERSION}" && npm cache clean --force && ocr version
 
 # Vineflower (Java decompiler, Apache-2.0) for `api src`: workers read dependency behaviour as source
 # instead of javap -c bytecode. Used only where the project image has a JDK. Pinned and verified.

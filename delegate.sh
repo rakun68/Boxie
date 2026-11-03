@@ -1284,8 +1284,14 @@ ocr_review() {
   local v MODEL="ocr:$model" ROLE="$role" REVIEW=1 REVIEW_TARGET="$branch" TIMEOUT_MIN="${OCR_TIMEOUT_MIN:-15}"
   for v in MODEL ROLE REVIEW REVIEW_TARGET TIMEOUT_MIN; do printf '%s=%q\n' "$v" "${!v}"; done >"$dir/meta.sh"
   printf 'RUN_BASE_SHA=%q\nRUN_BASE_REF=%q\nENGINE=ocr\n' "$(git -C "$REPO" rev-parse "$base")" "$branch" >>"$dir/meta.sh"
-  echo "boxie: $n: open-code-review on $model (host, read-only worktree)" >&2
-  OCR_BIN="${OCR_BIN:-}" OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="$OMNIROUTE_API_KEY" node "$(winpath "$BOX/lib/ocr.mjs")" review \
+  # In the worker image by default (CLAUDE.md rule 6: the repository read-only, only the run dir
+  # writable); OCR_HOST=1 runs the host's own `ocr` against a worktree, as before.
+  local ocr_image="" ocr_ip=""
+  if [ "${OCR_HOST:-0}" != 1 ]; then ocr_image="$BASE_IMAGE"; ocr_ip="$(host_address)"; fi
+  echo "boxie: $n: open-code-review on $model (${ocr_image:+container $ocr_image, }read-only repository)" >&2
+  OCR_BIN="${OCR_BIN:-}" OCR_IMAGE="$ocr_image" OCR_ENGINE="$ENGINE" OCR_HOST_IP="$ocr_ip" \
+    OMNIROUTE_BASE_URL="${OMNIROUTE_BASE_URL:-http://host.docker.internal:20128/v1}" \
+    OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="$OMNIROUTE_API_KEY" node "$(winpath "$BOX/lib/ocr.mjs")" review \
     "$(winpath "$REPO")" "$base" "$branch" "$(winpath "$dir")" --model "$model" --effort "${OCR_EFFORT:-medium}" \
     --concurrency "${OCR_CONCURRENCY:-8}" --timeout "${OCR_TIMEOUT_MIN:-15}" ${OCR_MAX_TOOLS:+--max-tools "$OCR_MAX_TOOLS"} \
     ${bg:+--background-file "$(winpath "$bg")"} ${paths:+--paths "$paths"} 2>&1 | tee "$dir/harness.log" >&2 || true

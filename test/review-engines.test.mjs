@@ -175,3 +175,16 @@ test("fanout: a findings block with a raw tab inside a string still parses", () 
   const t = "```boxie-findings\n[{\"issue\": \"x\", \"existing_code\": \"\tcode\"}]\n```";
   assert.deepEqual(findingsOf(t), [{ issue: "x", existing_code: "\tcode" }]);
 });
+
+test("ocr: the container run mounts the repository read-only and names the key, never its value", async () => {
+  const { containerCommand } = await import("../lib/ocr.mjs");
+  const [cmd, args] = containerCommand({ engine: "podman", image: "boxie:latest", name: "boxie-ocr-x", hostIp: "192.168.127.254",
+    gitDir: "C:/repo/.git", dir: "C:/runs/p/x", headSha: "abc", ocrArgs: ["review", "--repo", "/work/r"] });
+  assert.equal(cmd, "podman");
+  assert.ok(args.includes("C:/repo/.git:/src.git:ro"));
+  assert.ok(args.includes("C:/runs/p/x:/out"));
+  assert.ok(args.includes("host.docker.internal:192.168.127.254"));
+  assert.equal(args[args.indexOf("OCR_LLM_TOKEN") - 1], "-e");
+  assert.ok(!args.some((a) => /OCR_LLM_TOKEN=/.test(a)));
+  assert.deepEqual(args.slice(-3), ["review", "--repo", "/work/r"]);
+});
