@@ -494,8 +494,12 @@ launch() {
     # Deterministic context pack: files, areas, governing docs, traps, terms, tests, sealed globs.
     local map="$BOX/projects/$PROJECT.context.yaml" map_arg="-"
     [ -f "$map" ] && map_arg="$(winpath "$map")"
+    # A failed pack still leaves a verdict: the AACR bench read six such runs (git ENOBUFS) as empty reviews.
     local meta; meta="$(node "$(winpath "$BOX/lib/pack.mjs")" "$(winpath "$REPO")" "$(winpath "$task")" \
-      "$map_arg" "$(winpath "$run_dir")" "$base_sha")" || die "context pack failed"
+      "$map_arg" "$(winpath "$run_dir")" "$base_sha" 2>>"$run_dir/harness.log")" || {
+      rm -f "$run_dir/in.bundle"
+      echo "verdict interrupted  next fix_environment  (context pack failed: $(grep -m1 -E '(^|[> ])[A-Za-z]*Error: ' "$run_dir/harness.log" | tr -d '\r' | cut -c1-200))" >"$run_dir/verdict.txt"
+      die "context pack failed (see $run_dir/harness.log)"; }
     printf '%s\n' "$meta" >"$run_dir/pack.json"
     SEALED="$(node -e 'console.log(JSON.parse(process.argv[1]).sealed.join("\n"))' "$meta")"
     local pack_test; pack_test="$(node -e 'console.log(JSON.parse(process.argv[1]).test)' "$meta")"
