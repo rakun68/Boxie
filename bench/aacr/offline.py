@@ -5,8 +5,8 @@
     python bench/aacr/offline.py --label off1 --ids lvgl__lvgl@e526b2a --variants ocr=ocr2:raw,cons=ocr2+box2:cons
 
 A source is `ocr30` (bench30 OCR result), `ocrN` (the smokeN OCR run) or `boxN` / `box30` (the smokeN or
-fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
-cons (merge-reviews with the diff: one model call per file). Results go to
+fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), `oocr:<label>` (a smoke OCR arm), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
+cons (merge-reviews with the diff: one model call per file), cons-M-S (the same with min M, lone-fanout min S). Results go to
 evaluation/results/offline/<label>/; state.json holds every score. Nothing is retried.
 """
 import argparse, json, os, sys, tempfile
@@ -34,6 +34,8 @@ def source_dir(src, inst, work):
             p = sh("node", BOX / "lib/prose.mjs", work / "change.diff", d)
             print("  " + (p.stdout + p.stderr).strip()[-300:], flush=True)
         return d
+    if src.startswith("oocr:"):
+        return BOX / "runs" / project / f"aacr-{src[5:]}-ocr-{sha}-review-both-ocr"
     if src.startswith("h") and ":" in src:
         role, label = src[1:].split(":")
         return BOX / "runs" / project / f"aacr-{label}-hybrid-{sha}-review-both-{'ocr' if role == 'ocr' else 'gemini'}"
@@ -87,7 +89,10 @@ def main():
                 comments = comments_of(json.loads((dirs[0] / "findings.json").read_text(encoding="utf-8")))
             else:
                 merged = work / f"{name}.json"
-                p = sh("node", BOX / "lib/merge-reviews.mjs", merged, *(["--diff", diff] if mode == "cons" else []), *dirs)
+                # cons-M-S: consolidation with CONSOLIDATE_MIN=M and CONSOLIDATE_SOLO_MIN=S.
+                bars = dict(zip(("CONSOLIDATE_MIN", "CONSOLIDATE_SOLO_MIN"), mode.split("-")[1:]))
+                p = sh("node", BOX / "lib/merge-reviews.mjs", merged, *(["--diff", diff] if mode.startswith("cons") else []), *dirs,
+                       env={**os.environ, **bars})
                 msg = (p.stdout + p.stderr).strip()[-400:]
                 comments = comments_of(json.loads(merged.read_text(encoding="utf-8")) if merged.exists() else [])
             rdir = out / name

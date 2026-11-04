@@ -23,7 +23,8 @@ PY = str(EV / ".venv/Scripts/python.exe") if os.name == "nt" else str(EV / ".ven
 MODEL = "antigravity/gemini-3.8-flash-high"
 FROZEN = ["lib", "image", "delegate.sh", "boxie.conf", "bench/aacr"]
 # @high: the bench30 baseline's setting. hybrid takes the advise default (REVIEW_PART_EFFORT, medium).
-ROLES = {"boxie": "review-both-gemini@high", "hybrid": "review-both-gemini,review-both-ocr", "ocr": "review-both-ocr"}
+ROLES = {"boxie": "review-both-gemini@high", "hybrid": "review-both-gemini,review-both-ocr", "ocr": "review-both-ocr",
+         "duo": "review-both-ocr,review-both-ocr2"}
 
 
 def sh(*a, **k):

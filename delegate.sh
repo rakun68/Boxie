@@ -91,8 +91,8 @@ Usage: delegate.sh <command> ...
                                  puts the previous round's findings first, to recheck
                                  --advise (REVIEW_KIND=advise): every useful comment, not only proven
                                  blockers; the diff split into parts reviewed side by side in one
-                                 container, no setup. --roles review-both-ocr runs open-code-review on
-                                 the host instead (lib/ocr.mjs). Exits 3 when a reviewer did not finish
+                                 container, no setup. --roles review-both-ocr runs open-code-review
+                                 (lib/ocr.mjs), review-both-ocr2 a second run of it. Exits 3 when a reviewer did not finish
   loop    <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE]
                         [--review-mode split|both] [--roles a,b] [--fresh ROLES|none] [--max-fixes N] [--effort LEVEL]
                                  Review, rerun each finding's reproduction and the tests next to the
