@@ -97,7 +97,10 @@ def main():
             verdict = (run / "verdict.txt").read_text(encoding="utf-8").strip() if (run / "verdict.txt").exists() else "no verdict"
             s = read_json(run / "summary.json", {})
             per_run.append({"run": run.name, "verdict": verdict, "seconds": s.get("seconds"), "agent_exit": s.get("agent_exit"),
-                            "findings": len(read_json(run / "findings.json", []) or []), "tokens": run_tokens(run.name)})
+                            "findings": len(read_json(run / "findings.json", []) or []), "tokens": run_tokens(run.name),
+                            # open-code-review files that failed after its retry (lib/ocr.mjs): lost recall, not a clean run.
+                            "ocr_failed_files": (s.get("ocr") or {}).get("failed_files"),
+                            "ocr_first_failed_files": (s.get("ocr") or {}).get("first_failed_files")})
         if len(runs) > 1:
             # The review's own merged list (delegate.sh: consolidated with the diff), as a user gets it.
             merged = BOX / "runs" / project / f"{name}-merged.json"

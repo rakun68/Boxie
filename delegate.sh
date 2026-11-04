@@ -1254,10 +1254,16 @@ cmd_fanout() {
   [ -n "$score" ] || return 0
   # Same check for every attempt (a judge, the hidden tests), so picking one is a number, not a reading.
   echo; echo "score: $score"
+  local res best="" bestn=-1 lines
   for n in "${names[@]}"; do
     git -C "$REPO" rev-parse --verify --quiet "agent/$n^{commit}" >/dev/null || { echo "  $n  no branch"; continue; }
-    echo "  $n  $( (cmd_check "$repo" "agent/$n" --test "$score" --name "$n-score") 2>/dev/null | tail -n 1)"
+    res="$( (cmd_check "$repo" "agent/$n" --test "$score" --name "$n-score") 2>/dev/null | tail -n 1)"
+    lines="$(git -C "$REPO" diff --shortstat "$(jq -r .base "$BOX/runs/$PROJECT/$n/summary.json" 2>/dev/null)" "agent/$n" 2>/dev/null | grep -oE '[0-9]+ (insertion|deletion)' | awk '{s+=$1} END {print s+0}')"
+    echo "  $n  $res  ${lines:-?} lines"
+    # The pick: a passing attempt, the smallest diff among them (the loop's own tie-break, lib/loop.mjs).
+    if [ "$res" = "check 0" ] && { [ "$bestn" -lt 0 ] || [ "${lines:-0}" -lt "$bestn" ]; }; then best="$n"; bestn="${lines:-0}"; fi
   done
+  echo "pick: ${best:-none passed}"
 }
 
 # Read-only review of a branch by several reviewers in parallel. The review task is generated: the

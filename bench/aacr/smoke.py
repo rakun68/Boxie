@@ -3,14 +3,17 @@
     source "$AACR_DIR/env.sh"
     python bench/aacr/smoke.py --label smoke1 --ids lvgl__lvgl@e526b2a,ollama__ollama@2ed14f2
 
-Arms: `hybrid` (Boxie's advise review: the fanout reviewer at medium effort and open-code-review side by side,
+Arms: `duo` (the default: two independent open-code-review runs, review-both-ocr and review-both-ocr2,
+joined by problem in lib/consolidate.mjs), `hybrid` (Boxie's advise review: the fanout reviewer at medium effort and open-code-review side by side,
 consolidated by lib/consolidate.mjs), `boxie` (the fanout reviewer alone, high effort: the bench30 baseline),
 `ocr` (review-both-ocr: open-code-review in the worker image), and `merged` (the boxie and ocr runs merged by
 lib/merge-reviews.mjs, no extra review). Source, image and
 settings are recorded in <out>/versions.json before the first review and checked before each one; a change
 stops the run. <out>/state.json is the one durable record (atomic writes, one writer): a rerun resumes it.
 Each judge call runs in its own process, so no client or lock outlives its event loop. Nothing is retried:
-a failed review is recorded with its outcome (boxie_arm.outcome), never rerun into a success.
+a failed review is recorded with its outcome (boxie_arm.outcome), never rerun into a success. `ocr_failed` in
+each state entry lists, per open-code-review run, its failed files before and after its own retry: compare
+arms only on PRs where no run has any left (a lost file is lost recall, not a reviewer's miss).
 
 Env: JUDGE_* and OCR_LLM_* from env.sh; JUDGE_MODEL and OCR_LLM_MODEL default to the model below.
 """
@@ -84,7 +87,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True)
     ap.add_argument("--ids", required=True, help="comma-separated instance ids from data/bench30.jsonl")
-    ap.add_argument("--arms", default="hybrid,ocr")
+    ap.add_argument("--arms", default="duo,ocr")
     o = ap.parse_args()
     os.environ.setdefault("JUDGE_MODEL", MODEL)
     os.environ.setdefault("OCR_LLM_MODEL", MODEL)
@@ -135,7 +138,9 @@ def main():
             r = json.loads(result.read_text(encoding="utf-8"))
             s = score(inst, rdir, out / "score-raw" / arm)
             state[key] = {"group": groups.get(iid), "outcome": r.get("outcome"), "seconds": r.get("duration_seconds"),
-                          "comments": len(r["review"]["comments"]), "tokens": r["review"].get("summary"), "score": s}
+                          "comments": len(r["review"]["comments"]), "tokens": r["review"].get("summary"), "score": s,
+                          # Failed open-code-review files per run (first try, after the retry): a run with any left is partial.
+                          "ocr_failed": [[x.get("ocr_first_failed_files"), x.get("ocr_failed_files")] for x in r.get("runs", []) if x.get("ocr_failed_files") is not None]}
             save(sfile, state)
             print(f"  {state[key]['outcome']} {state[key]['seconds']} s, {state[key]['comments']} comments,"
                   f" P {s.get('file_semantic_match_rate', '?')} R {s.get('file_semantic_recall_rate', '?')}", flush=True)

@@ -72,7 +72,9 @@ Take the first option that fully works:
   beats addition. Keep the structure the codebase already has.
 - The shortest working diff wins, once you know everything it must touch.
 - Comment only the why the code cannot show, in one line.
-- Bug fix: before you edit, grep every caller of the function you touch, then fix the root cause once.
+- Bug fix: before you edit, reproduce it: a test or command that fails on the current code for the reported
+  reason, not just any failure. Then grep every caller of the function you touch, fix the root cause once,
+  and show the same check passing. Keep the check as a test when the repo has tests for that code.
 - Code you move or merge keeps its error handling and validation.
 - Between options of equal size, take the one that is correct on edge cases.
 - New non-trivial logic leaves one small test. Trivial changes need none.
