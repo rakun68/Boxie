@@ -81,3 +81,35 @@ The `off8` row reuses `dev2`'s raw reviews and runs only the new consolidation o
   consolidation scored it 2 ("asks to verify") and dropped it. The rule was not retuned on held-out data.
 - **Low recall.** Recall is low for both arms on held-out data (about 0.1). The ground truth has many
   notes that neither arm finds.
+
+## Later runs: full1, full2 and the duo (2026-11-04 to 2026-11-05)
+
+| Run | Boxie arm | Boxie P / R | OCR P / R | Note |
+| --- | --- | --- | --- | --- |
+| full1, 10 PRs | hybrid, 10-minute parts | 0.432 / 0.235 | 0.466 / 0.235 | mpv failed on both arms (gateway) |
+| full1, 9 PRs, offline | two OCR runs consolidated | 0.548 / 0.298 | 0.466 / 0.248 | the second OCR run is the OCR arm |
+| dev2 + held1, offline | two OCR runs consolidated | 0.427 / 0.242 | 0.390 / 0.208 | dev2 gains, held1 ties |
+| full2, 5 dev PRs | duo (`review-both-ocr,review-both-ocr2`) | 0.491 / 0.346 | 0.463 / 0.247 | stopped by a Podman outage |
+
+full2's live margin came mostly from failed files. The OCR arm lost 5 of 23 files on ClickHouse and 4 of 7 on
+ollama, yet was scored as complete. On the 3 clean PRs, duo and OCR tie: P 0.400 vs 0.414, and both hit
+13 of 48 reference notes. Since `3ddf0ab`, an OCR run retries its failed files once from its session, and a run
+with files still failed is partial. `smoke.py` records failed files per run, and `report.py --clean` leaves
+those PRs out.
+
+Rerunning the same consolidation on the same input moves P by about 0.03 (full1: 0.548, 0.520). Two
+OCR runs of a PR differ by about 0.05. Ten PRs cannot separate arms closer than that. The next benchmark uses
+the 20 bench30 PRs not run here (`research/review-improvement-research-2026-11-04.md` §5).
+
+Tried and not kept, measured offline on full1's two OCR runs:
+
+| Variant | P | R |
+| --- | ---: | ---: |
+| Old rubric (o57) | 0.549 | 0.306 |
+| New rubric: hedged wording no longer scores 2, agreement bar 5 | 0.521 | 0.291 |
+| New rubric, agreement bar 3 | 0.507 | 0.299 |
+| Duo plus the wording pass | 0.526 | 0.298 |
+| Duo alone, the same rerun | 0.520 | 0.291 |
+
+The first three rows leave out cline, whose judge call failed for two of them. Neither change beat the
+consolidation's own run-to-run spread, so both were dropped.
