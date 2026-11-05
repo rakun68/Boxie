@@ -4,7 +4,7 @@
     python bench/aacr/smoke.py --label smoke1 --ids lvgl__lvgl@e526b2a,ollama__ollama@2ed14f2
 
 Arms: `duo` (the default: two independent open-code-review runs, review-both-ocr and review-both-ocr2,
-joined by problem in lib/consolidate.mjs), `hybrid` (Boxie's advise review: the fanout reviewer at medium effort and open-code-review side by side,
+joined by problem in lib/consolidate.mjs), `trio` (the same with a third run, review-both-ocr3), `hybrid` (Boxie's advise review: the fanout reviewer at medium effort and open-code-review side by side,
 consolidated by lib/consolidate.mjs), `boxie` (the fanout reviewer alone, high effort: the bench30 baseline),
 `ocr` (review-both-ocr: open-code-review in the worker image), and `merged` (the boxie and ocr runs merged by
 lib/merge-reviews.mjs, no extra review). Source, image and
@@ -27,7 +27,7 @@ MODEL = "antigravity/gemini-3.8-flash-high"
 FROZEN = ["lib", "image", "delegate.sh", "boxie.conf", "bench/aacr"]
 # @high: the bench30 baseline's setting. hybrid takes the advise default (REVIEW_PART_EFFORT, medium).
 ROLES = {"boxie": "review-both-gemini@high", "hybrid": "review-both-gemini,review-both-ocr", "ocr": "review-both-ocr",
-         "duo": "review-both-ocr,review-both-ocr2"}
+         "duo": "review-both-ocr,review-both-ocr2", "trio": "review-both-ocr,review-both-ocr2,review-both-ocr3"}
 
 
 def sh(*a, **k):

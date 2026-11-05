@@ -5,7 +5,7 @@
     python bench/aacr/offline.py --label off1 --ids lvgl__lvgl@e526b2a --variants ocr=ocr2:raw,cons=ocr2+box2:cons
 
 A source is `ocr30` (bench30 OCR result), `ocrN` (the smokeN OCR run) or `boxN` / `box30` (the smokeN or
-fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), `oocr:<label>` (a smoke OCR arm), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
+fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), `oocr:<label>` (a smoke OCR arm), `d1:<label>` / `d2:<label>` (the two runs of a smoke duo arm), `drop:<label>` (what its consolidation scored out), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
 cons (merge-reviews with the diff: one model call per file), cons-M-S (the same with min M, lone-fanout min S). Results go to
 evaluation/results/offline/<label>/; state.json holds every score. Nothing is retried.
 """
@@ -34,6 +34,14 @@ def source_dir(src, inst, work):
             p = sh("node", BOX / "lib/prose.mjs", work / "change.diff", d)
             print("  " + (p.stdout + p.stderr).strip()[-300:], flush=True)
         return d
+    if src.startswith("drop:"):
+        # The comments a smoke duo arm's consolidation scored out, as one list.
+        d = work / "drop"
+        d.mkdir(exist_ok=True)
+        (d / "findings.json").write_bytes((BOX / "runs" / project / f"aacr-{src[5:]}-duo-{sha}-merged.dropped.json").read_bytes())
+        return d
+    if src[:3] in ("d1:", "d2:"):
+        return BOX / "runs" / project / f"aacr-{src[3:]}-duo-{sha}-review-both-ocr{'' if src[1] == '1' else '2'}"
     if src.startswith("oocr:"):
         return BOX / "runs" / project / f"aacr-{src[5:]}-ocr-{sha}-review-both-ocr"
     if src.startswith("h") and ":" in src:
