@@ -5,11 +5,11 @@
     python bench/aacr/offline.py --label off1 --ids lvgl__lvgl@e526b2a --variants ocr=ocr2:raw,cons=ocr2+box2:cons
 
 A source is `ocr30` (bench30 OCR result), `ocrN` (the smokeN OCR run) or `boxN` / `box30` (the smokeN or
-fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), `oocr:<label>` (a smoke OCR arm), `d1:<label>` / `d2:<label>` (the two runs of a smoke duo arm), `drop:<label>` (what its consolidation scored out), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
+fresh-high Boxie run), `hocr:<label>` / `hbox:<label>` (the two halves of a smoke hybrid run), `oocr:<label>` (a smoke OCR arm), `d1:<label>` / `d2:<label>` or `duoN:<label>` / `trioN:<label>` (one run of a smoke duo or trio arm), `drop:<label>` (what its consolidation scored out), or `prose` (lib/prose.mjs on the diff, once per PR). Modes: raw (one source as it is), merge (lib/merge-reviews.mjs, deterministic),
 cons (merge-reviews with the diff: one model call per file), cons-M-S (the same with min M, lone-fanout min S). Results go to
 evaluation/results/offline/<label>/; state.json holds every score. Nothing is retried.
 """
-import argparse, json, os, sys, tempfile
+import argparse, json, os, re, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -40,8 +40,10 @@ def source_dir(src, inst, work):
         d.mkdir(exist_ok=True)
         (d / "findings.json").write_bytes((BOX / "runs" / project / f"aacr-{src[5:]}-duo-{sha}-merged.dropped.json").read_bytes())
         return d
-    if src[:3] in ("d1:", "d2:"):
-        return BOX / "runs" / project / f"aacr-{src[3:]}-duo-{sha}-review-both-ocr{'' if src[1] == '1' else '2'}"
+    m = re.match(r"(?:d|duo|trio)([123]):(.+)$", src)
+    if m:
+        arm = "trio" if src.startswith("trio") else "duo"
+        return BOX / "runs" / project / f"aacr-{m[2]}-{arm}-{sha}-review-both-ocr{'' if m[1] == '1' else m[1]}"
     if src.startswith("oocr:"):
         return BOX / "runs" / project / f"aacr-{src[5:]}-ocr-{sha}-review-both-ocr"
     if src.startswith("h") and ":" in src:
@@ -98,7 +100,7 @@ def main():
             else:
                 merged = work / f"{name}.json"
                 # cons-M-S: consolidation with CONSOLIDATE_MIN=M and CONSOLIDATE_SOLO_MIN=S.
-                bars = dict(zip(("CONSOLIDATE_MIN", "CONSOLIDATE_SOLO_MIN"), mode.split("-")[1:]))
+                bars = dict(zip(("CONSOLIDATE_MIN", "CONSOLIDATE_SOLO_MIN"), mode.split("-")[1:])) if mode.startswith("cons-") else {}
                 p = sh("node", BOX / "lib/merge-reviews.mjs", merged, *(["--diff", diff] if mode.startswith("cons") else []), *dirs,
                        env={**os.environ, **bars})
                 msg = (p.stdout + p.stderr).strip()[-400:]

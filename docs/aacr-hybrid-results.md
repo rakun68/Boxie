@@ -140,3 +140,20 @@ Offline on full3's runs (`off12`):
 
 Cost: trio uses 2.8x OCR's tokens and 1.2x its time (the runs go side by side). Five PRs score zero
 on every arm (react, cline, hyperswitch, elasticsearch, codex: 48 reference notes): the next recall gap.
+
+### The zero-score PRs (2026-11-05)
+
+react, cline, hyperswitch, codex and elasticsearch (48 reference notes) against full4's trio runs:
+
+- Every file with a reference note was selected and reviewed on all three runs: coverage is not the gap.
+- hyperswitch: no comment at all on 3 runs. Its 8 notes are Rust import and `#[cfg]` feature-gating nits.
+- codex: the runs flagged the `store` field; the 7 notes are about `///` turned into `//` and serde on `id` fields.
+- react: 12 of 16 notes are maintainability or design (ordering, comments, feature flags, API boundary).
+- cline: the runs found the proto `task_id`/`ulid` mismatch the two notes describe, but full4's live
+  consolidation scored both comments 4 ("unproven": the proto file is outside the diff) and dropped them.
+  An offline re-consolidation of the same runs kept them (2 hits): consolidation variance, not a rule.
+- Showing the scorer the source a comment cites (read at the PR head) did not move the totals: trio
+  P 0.489 R 0.271 with it, 0.500 / 0.271 without; duo 0.452 / 0.235 against 0.416 / 0.241. Dropped.
+
+Most of the remaining misses are maintainability notes an open-code-review run does not raise; the
+wording pass tested earlier (prose) did not recover them either.
