@@ -3,7 +3,7 @@
     source "$AACR_DIR/env.sh"
     python bench/aacr/smoke.py --label smoke1 --ids lvgl__lvgl@e526b2a,ollama__ollama@2ed14f2
 
-Arms: `duo` (the default: two independent open-code-review runs, review-both-ocr and review-both-ocr2,
+Arms: `trio` (the default: three runs, see below), `duo` (two independent open-code-review runs, review-both-ocr and review-both-ocr2,
 joined by problem in lib/consolidate.mjs), `trio` (the same with a third run, review-both-ocr3), `hybrid` (Boxie's advise review: the fanout reviewer at medium effort and open-code-review side by side,
 consolidated by lib/consolidate.mjs), `boxie` (the fanout reviewer alone, high effort: the bench30 baseline),
 `ocr` (review-both-ocr: open-code-review in the worker image), and `merged` (the boxie and ocr runs merged by
@@ -87,7 +87,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--label", required=True)
     ap.add_argument("--ids", required=True, help="comma-separated instance ids from data/bench30.jsonl")
-    ap.add_argument("--arms", default="duo,ocr")
+    ap.add_argument("--arms", default="trio,ocr")
     o = ap.parse_args()
     os.environ.setdefault("JUDGE_MODEL", MODEL)
     os.environ.setdefault("OCR_LLM_MODEL", MODEL)

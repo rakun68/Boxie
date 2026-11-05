@@ -172,3 +172,6 @@ The offline variants behind proposals 3 and 4, on full1:
 | Duo alone, the same rerun | 0.520 | 0.291 |
 
 The worker image was rebuilt with the new rule, open-code-review still at 1.13.4.
+
+Proposal 5 (a third run), live on 19 PRs (full4, 2026-11-05): trio P 0.477 R 0.259 against a fresh OCR
+run's 0.407 / 0.205, at 2.8x the tokens. See docs/aacr-hybrid-results.md.

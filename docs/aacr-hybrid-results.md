@@ -113,3 +113,30 @@ Tried and not kept, measured offline on full1's two OCR runs:
 
 The first three rows leave out cline, whose judge call failed for two of them. Neither change beat the
 consolidation's own run-to-run spread, so both were dropped.
+
+## full3 and full4: 19 PRs, duo and trio against a fresh OCR run (2026-11-05)
+
+Same 19 PRs (5 handpicked, 14 random), one review at a time, nothing else running. No run on either arm
+had a failed start or a file left failed after its retry, so the `--clean` pool equals the raw pool.
+
+| Run | Arm | P | R | Seconds | Tokens |
+| --- | --- | ---: | ---: | ---: | ---: |
+| full3 | duo | 0.424 (36/85) | 0.235 (39/166) | 6875 | 75.6M |
+| full3 | OCR | 0.382 (34/89) | 0.217 (36/166) | 5876 | 39.4M |
+| full4 | trio | 0.477 (42/88) | 0.259 (43/166) | 8371 | 103.3M |
+| full4 | OCR | 0.407 (33/81) | 0.205 (34/166) | 6938 | 37.2M |
+
+full4 by group: handpicked trio 0.520 / 0.217 against OCR 0.370 / 0.167, random 0.460 / 0.283 against
+0.426 / 0.226. Per PR, trio found more reference notes on 6, fewer on 3 (react, PowerToys, vllm 075f1b5,
+one note each), the same on 10. full3's duo lost handpicked precision (0.500 against 0.571).
+
+Offline on full3's runs (`off12`):
+
+- Each duo run alone: P 0.447 R 0.211 and P 0.374 R 0.229. Their plain union: P 0.282 R 0.271.
+- The comments consolidation scored out hit 4 of 27, so the bar is right. Grouping loses a few notes
+  the union had (45 to 40).
+- Carrying the other reports' wording on a merged comment: P 0.410 R 0.217 against 0.416 / 0.241. Dropped.
+- Three runs consolidated: P 0.451 R 0.271 and 0.446 / 0.277, which full4 then confirmed live.
+
+Cost: trio uses 2.8x OCR's tokens and 1.2x its time (the runs go side by side). Five PRs score zero
+on every arm (react, cline, hyperswitch, elasticsearch, codex: 48 reference notes): the next recall gap.
