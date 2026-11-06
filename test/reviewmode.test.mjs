@@ -15,6 +15,13 @@ import { overrides, loopRoles, fixReviewer, recheckAxes, settings, loop, resume 
 
 const BOX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+test("reviewRoles: normal is one open-code-review run, deep two or three", () => {
+  assert.deepEqual(reviewRoles({ mode: "normal" }), ["review-both-ocr"]);
+  assert.deepEqual(reviewRoles({ mode: "deep" }), ["review-both-ocr", "review-both-ocr2"]);
+  assert.deepEqual(reviewRoles({ defaultMode: "deep", deep: 3 }), ["review-both-ocr", "review-both-ocr2", "review-both-ocr3"]);
+  assert.deepEqual(reviewRoles({ listed: "review-spec", defaultMode: "normal" }), ["review-spec"], "REVIEW_ROLES first");
+});
+
 test("reviewRoles: --roles, then --review-mode, then REVIEW_ROLES, then REVIEW_MODE", () => {
   assert.deepEqual(reviewRoles({}), ["review-spec", "review-std"], "the default is split");
   assert.deepEqual(reviewRoles({ defaultMode: "both" }), ["review-both"]);
@@ -98,13 +105,14 @@ test("delegate.sh review in mode both: one review-both run, its own prompt, --pr
   const review = (...a) => spawnSync("bash", ["delegate.sh", "review", dir, "agent/x", ...a],
     { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
   try {
-    review("--name", "B", "--prior", `both=${prior}`);
+    // REVIEW_MODE is the loop's; a standalone review names the OpenCode mode (its default is open-code-review).
+    review("--name", "B", "--review-mode", "both", "--prior", `both=${prior}`);
     const tdir = fs.readdirSync(runs).find((f) => f.startsWith(".review-"));
     const task = fs.readFileSync(path.join(runs, tdir, "task-review-both.md"), "utf8");
     assert.match(task, /both axes, spec and standards[\s\S]*What the last fix was for/);
     assert.deepEqual(fs.readdirSync(runs).filter((f) => f.endsWith(".log")), [".B-review-both.log"]);
     review("--name", "S", "--review-mode", "split");
-    assert.deepEqual(fs.readdirSync(runs).filter((f) => f.startsWith(".S-")).sort(), [".S-review-spec.log", ".S-review-std.log"], "--review-mode wins over the project");
+    assert.deepEqual(fs.readdirSync(runs).filter((f) => f.startsWith(".S-")).sort(), [".S-review-spec.log", ".S-review-std.log"], "--review-mode split");
     const bad = review("--review-mode", "three");
     assert.notEqual(bad.status, 0);
     assert.match(bad.stderr, /unknown review mode three/);

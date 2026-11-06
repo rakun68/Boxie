@@ -81,11 +81,13 @@ Usage: delegate.sh <command> ...
   fanout   <repo> <task.md> --roles a,b[,c] [--name N] [--score CMD] [run options]
                                  Same task on several roles in parallel; prints a comparison table.
                                  --score: CMD run on every result branch in a container (exit 0 = pass)
-  review   <repo> <branch> [--spec FILE ...] [--review-mode split|both | --roles a,b] [--against REF] [--focus TEXT]
+  review   <repo> <branch> [--spec FILE ...] [--deep | --review-mode MODE | --roles a,b] [--against REF] [--focus TEXT]
                             [--effort LEVEL] [--paths "a b"]
                                  Read-only review, every reviewer given the branch's task and every --spec.
-                                 Review mode (REVIEW_MODE, per project): split = two reviewers in parallel,
-                                 review-spec and review-std; both = one review-both covering both axes.
+                                 Default REVIEW_DEPTH=normal: one open-code-review run (lib/ocr.mjs).
+                                 --deep (REVIEW_DEPTH=deep): REVIEW_DEEP_RUNS (2) runs side by side,
+                                 merged by problem. --review-mode split|both: the OpenCode reviewers
+                                 (split = review-spec and review-std, both = one review-both).
                                  --roles names the reviewers outright (one axis: --roles review-spec).
                                  --name P names the runs P-<role>; --prior spec=FILE|std=FILE|both=FILE
                                  puts the previous round's findings first, to recheck
@@ -94,7 +96,12 @@ Usage: delegate.sh <command> ...
                                  container, no setup. --roles review-both-ocr runs open-code-review
                                  (lib/ocr.mjs), review-both-ocr2 and -ocr3 further runs of it. Exits 3 when a reviewer did not finish
   loop    <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE]
+                        [--reviewer ocr|split] [--depth normal|deep]
                         [--review-mode split|both] [--roles a,b] [--fresh ROLES|none] [--max-fixes N] [--effort LEVEL]
+                                 --reviewer ocr (LOOP_REVIEWER): open-code-review reviews the whole
+                                 change once, then each later round only what changed since; the fixer
+                                 reproduces each medium+ behaviour finding with a test that must fail
+                                 on the code before its fix, or declines it (listed, never dropped).
                                  Review, rerun each finding's reproduction and the tests next to the
                                  change, fix what is proven, review the fix, until nothing blocks.
                                  Stuck findings, regressions, serious findings after 3 fix rounds or
@@ -754,9 +761,13 @@ mem_room() {
   MEM_LIMIT="$(awk -v t="$MEM_TOTAL" -v r="${MEMORY_OVERCOMMIT:-1.5}" 'BEGIN { printf "%.0f", t * r }')"
   MEM_USED=0
   ids="$(dk ps -q --filter "label=$LABEL" 2>/dev/null || true)"
+  # A parked container idles between rounds (230 MB of its 8 GiB cap, loopdemo 2026-11-05): counting its
+  # cap made the loop's own red check wait 17 h behind its parked fixer on a 4 GB Podman VM.
+  local parked=" " p
+  for p in "$BOX"/runs/*/*/parked; do read -r c _ 2>/dev/null <"$p" && parked+="$c "; done
   if [ -n "$ids" ]; then
     while read -r c m; do
-      up+="${c#/} "; [[ "$m" =~ ^[0-9]+$ ]] && MEM_USED=$(( MEM_USED + m ))
+      up+="${c#/} "; [[ "$parked" == *" ${c#/} "* ]] && continue; [[ "$m" =~ ^[0-9]+$ ]] && MEM_USED=$(( MEM_USED + m ))
     done < <(dk inspect -f '{{.Name}} {{.HostConfig.Memory}}' $ids 2>/dev/null || true)
   fi
   for i in "$d"/*/owner; do
@@ -1319,6 +1330,7 @@ cmd_review() {
       --effort) effort="$2"; shift 2 ;;   # every reviewer without its own role@effort
       --paths) paths="$2"; shift 2 ;;     # space-separated pathspecs: review only this area (phase-review)
       --review-mode) mode="$2"; shift 2 ;;
+      --deep) mode=deep; shift ;;
       --against) against="$2"; shift 2 ;;
       --focus) focus="$2"; shift 2 ;;
       --spec) [ -f "$2" ] || die "no such spec file $2"; specs+=("$2"); shift 2 ;;
@@ -1338,8 +1350,9 @@ cmd_review() {
   [ "$kind" = gate ] || [ "$kind" = advise ] || die "REVIEW_KIND is gate or advise, not $kind"
   # Advise uses the same both-axes prompt for every part: two default roles would review it twice.
   [ "$kind" != advise ] || [ -n "$mode$roles${REVIEW_ROLES:-}" ] || mode=both
-  # After load_project: the project file may set its own REVIEW_MODE or REVIEW_ROLES.
-  [ -n "$roles" ] || roles="$(node "$(winpath "$BOX/lib/reviewmode.mjs")" roles "$mode" "${REVIEW_ROLES:-}" "${REVIEW_MODE:-}")" || exit 1
+  # After load_project: the project file may set its own REVIEW_ROLES or REVIEW_DEPTH. REVIEW_MODE is the
+  # review loop's (lib/loop.mjs passes --roles); a standalone review is open-code-review, normal or deep.
+  [ -n "$roles" ] || roles="$(node "$(winpath "$BOX/lib/reviewmode.mjs")" roles "$mode" "${REVIEW_ROLES:-}" "${REVIEW_DEPTH:-normal}" "${REVIEW_DEEP_RUNS:-2}")" || exit 1
   herdr_ok && herdr_ws >/dev/null
   git -C "$REPO" rev-parse --verify --quiet "$branch^{commit}" >/dev/null || die "no such branch $branch"
   [ -n "$against" ] || against="$(git -C "$REPO" symbolic-ref --short HEAD 2>/dev/null || echo HEAD)"
@@ -1419,7 +1432,11 @@ cmd_review() {
     # --effort: a model whose effort is fixed (antigravity Claude) keeps its own, with a warning.
     # Advise parts read, they do not search: medium effort. On high, steps of 50-125 s were common.
     [ "$kind" = advise ] && [ -z "$effort" ] && [ -n "${REVIEW_PART_EFFORT:-medium}" ] && effort="${REVIEW_PART_EFFORT:-medium}"
-    if [ -n "$effort" ] && [[ "$r" != *@* ]]; then
+    local ovar="ROLE_${b//-/_}"
+    if [ -n "$effort" ] && [[ "$r" != *@* ]] && [[ "${!ovar:-}" == ocr:* ]]; then
+      # open-code-review's own effort: review rounds per group (low 1, medium 2, high 3).
+      case "$effort" in low|medium|high) r="$r@$effort" ;; *) echo "boxie: $b takes low, medium or high, not $effort" >&2 ;; esac
+    elif [ -n "$effort" ] && [[ "$r" != *@* ]]; then
       if (role_model "$b" "$effort") 2>/dev/null; then r="$r@$effort"; else echo "boxie: $b keeps its own effort: $effort refused for its model" >&2; fi
     fi
     swapped="${swapped:+$swapped,}$r"
@@ -1455,8 +1472,9 @@ cmd_review() {
     local n="${prefix:-rv-$stamp}-${r%%@*}" rvar="ROLE_${r%%@*}"; rvar="${rvar//-/_}"
     # A role whose model is ocr:<model> runs open-code-review on the host (lib/ocr.mjs), no container.
     if [[ "${!rvar:-}" == ocr:* ]]; then
-      local om="${!rvar%% *}"
-      ocr_review "$n" "${om#ocr:}" "$r" "$base" "$branch" "$tdir/task-${r/@/-}.md" "$(printf '%s\n' "${pspec[@]}")" "$origin" "${specs[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
+      local om="${!rvar%% *}" oe="${OCR_EFFORT:-medium}"
+      [[ "$r" == *@* ]] && oe="${r#*@}"
+      OCR_EFFORT="$oe" ocr_review "$n" "${om#ocr:}" "$r" "$base" "$branch" "$tdir/task-${r/@/-}.md" "$(printf '%s\n' "${pspec[@]}")" "$origin" "${specs[@]}" >"$BOX/runs/$PROJECT/.$n.log" 2>&1 &
     elif [ "$kind" = advise ]; then
       # REVIEW_PART_STEPS caps each part's session; open-code-review's groups used 31-98 tool calls a PR.
       BUNDLES_FILE="$bundles" REVIEW_SETUP=0 REVIEW_TARGET="$branch" "${SELF[@]}" run "$repo" "$tdir/task-${r/@/-}.md" --role "$r" --review --base "$branch" \

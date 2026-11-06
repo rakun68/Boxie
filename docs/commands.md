@@ -9,8 +9,8 @@ Back to the [README](../README.md).
 ./delegate.sh questions <repo> <run-name> [--wait]                              # open questions of a running worker
 ./delegate.sh answer <repo> <run-name> <id> (-m TEXT | -f FILE)                 # answer one; it keeps working
 ./delegate.sh fanout <repo> <task.md> --roles implement,feature [--base REF] ...   # parallel, comparison table
-./delegate.sh review <repo> <branch> [--review-mode split|both] [--roles a,b] [--against REF] [--focus TEXT]  # generated read-only review
-./delegate.sh loop   <repo> <run> [--spec FILE] [--max-rounds N] [--review-mode M] [--roles a,b] [--fresh R|none]  # review, verify, fix until nothing blocks
+./delegate.sh review <repo> <branch> [--deep | --review-mode split|both | --roles a,b] [--against REF] [--focus TEXT]  # read-only review: one open-code-review run, --deep several merged
+./delegate.sh loop   <repo> <run> [--spec FILE] [--max-rounds N] [--reviewer ocr|split] [--depth normal|deep] [--review-mode M] [--roles a,b] [--fresh R|none]  # review, verify, fix until nothing blocks
 ./delegate.sh loop resume <repo> <loop> [--answer T] [--drop IDs] [--add F] [-m T] [--max-rounds N] [--review-mode M]  # the orchestrator's decisions
 ./delegate.sh wait   <repo> <run-or-loop>... [--any] [--questions]  # block until they end; their short reports
 ./delegate.sh ask    <repo> [--role advise] [--prompt q.md] [--file ctx ...]       # one-pass advisor

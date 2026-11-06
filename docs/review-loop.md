@@ -69,3 +69,41 @@ loop then reruns each reproduction as usual. `ROLE_transcribe=""` turns it off.
 the whole suite did not run on the branch, with the `delegate.sh check <repo> agent/<run> --test
 "<cmd>"` command that runs it, and on a Windows host, that only a Linux container ran the tests. The
 orchestrator decides from the change's risk whether to run them.
+
+## open-code-review as the reviewer (`--reviewer ocr`, `LOOP_REVIEWER=ocr`)
+
+Off by default until a pilot on real tasks. open-code-review has no shell, so its findings carry no
+reproduction: the fixer proves them, and the harness checks the proof.
+
+1. **Round 1** reviews the whole change from the run's base: one run (`LOOP_OCR_DEPTH=normal`, `--depth`)
+   or `REVIEW_DEEP_RUNS` runs merged by problem (`deep`), at the first `LOOP_OCR_EFFORT` (`medium`).
+   `LOOP_FULL_ROUNDS` (1) whole-change rounds run before the next step.
+2. **Triage, by code** (`ocrRoute`):
+
+   | finding | goes to |
+   | --- | --- |
+   | says the code does not build, with `BUILD_CMD` set | the build runs in the round's check: passing drops it (`review_false_positive`), failing makes it a proven item |
+   | medium+ logic, edge case, security or requirement | the fixer: write a test that fails on the current code, then fix; or decline it |
+   | other medium+ (performance, maintainability, standards) | sent with the fix as advice, no proof |
+   | low | a note, optional for the fixer (`LOOP_LOW=fix`: advice) |
+
+3. **The fixer's proof.** It lists `proofs: [{finding, test}]` in its report. The harness runs each named
+   test on the code from before the fix (the red check, no neighbour tests): it must fail there. A test
+   that passes there proves nothing and the finding stays open; a finding with no test stays open; both
+   count toward the stall rules. A proven test joins the proof suite and reruns every round. A finding
+   the fixer lists under `disputes` is declined: it leaves the loop, is never labelled false, and the
+   brief lists it with the reason for the orchestrator.
+4. **Later rounds** review only what changed since round 1 (`--against` the first reviewed commit), one
+   run, at the second `LOOP_OCR_EFFORT` (`low`). The review is told what earlier rounds fixed (with the
+   test), sent, declined and noted, so it does not raise them again. Rounds repeat until one is clean,
+   within `LOOP_MAX_FIXES` and `LOOP_MAX_ROUNDS`.
+
+The loop ends when nothing proven or pending is left: a clean first round, a clean later round, or only
+declines and notes. The brief adds `cost:` (rounds, minutes, proofs, declines, drops; also `metrics` in
+`state.json`) and `slow checks:` (steps over 60 s, for the project to speed up). The build runs once per
+check however many claims need it.
+
+Why this shape (54 recorded loops, 2026-11-05): the first review found 56 of the 73 blocking findings
+of the review and fix rounds; a harness check took 92 s at the median against 522 s for a review and
+884 s for a fix; 14 of the 74 blocking findings were requirements, so the task and every `--spec` reach
+open-code-review as its background.

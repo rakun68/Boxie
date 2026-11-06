@@ -102,7 +102,8 @@ test("review: a branch Claude wrote gets review-spec-alt; in mode both, a DeepSe
       { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
   };
   try {
-    const r = review("antigravity/claude-opus-4-6-thinking-high", "--name", "A");
+    // A standalone review defaults to open-code-review (REVIEW_DEPTH); the OpenCode reviewers by mode.
+    const r = review("antigravity/claude-opus-4-6-thinking-high", "--name", "A", "--review-mode", "split");
     assert.match(r.stderr, /review-spec is the same family: that review goes to review-spec-alt/);
     const logs = fs.readdirSync(runs).filter((f) => f.startsWith(".A-"));
     assert.ok(logs.includes(".A-review-spec-alt.log"), logs.join(", "));
@@ -111,7 +112,7 @@ test("review: a branch Claude wrote gets review-spec-alt; in mode both, a DeepSe
     const b = review("deepseek/deepseek-flash-max", "--name", "B", "--review-mode", "both");
     assert.match(b.stderr, /review-both is the same family: that review goes to review-both-alt/);
     assert.deepEqual(fs.readdirSync(runs).filter((f) => f.startsWith(".B-")), [".B-review-both-alt.log"]);
-    const c = review("deepseek/deepseek-flash-max", "--name", "C");
+    const c = review("deepseek/deepseek-flash-max", "--name", "C", "--review-mode", "split");
     assert.doesNotMatch(c.stderr, /same family/, "DeepSeek code: the Opus spec reviewer stays");
   } finally {
     fs.rmSync(runs, { recursive: true, force: true });

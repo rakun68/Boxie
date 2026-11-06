@@ -55,7 +55,9 @@ made for other stacks (examples in `projects/example.env`):
 | `NEIGHBOUR_SOURCES` | Changed files whose neighbouring tests rerun each review round. Default: JS/TS, Java, Kotlin, Python, Go, Rust, C/C++ |
 | `SENSITIVE_EXTRA` | More paths flagged `SENSITIVE` when a worker edits them |
 | `BASE_SUITE_CMD` | The base's whole suite, run once per base commit for the loop (default `TEST_CMD`) |
-| `ROLE_*`, `REVIEW_MODE`, `REVIEW_ROLES`, `LOOP_*` | Models, reviewers and loop limits for this project only |
+| `BUILD_CMD` | The build or type check. With `LOOP_REVIEWER=ocr`, a finding claiming the code does not build is settled by it |
+| `REVIEW_DEPTH`, `REVIEW_DEEP_RUNS` | A standalone `review`: `normal` (one open-code-review run) or `deep` (2 or 3 runs merged) |
+| `ROLE_*`, `REVIEW_MODE`, `REVIEW_ROLES`, `LOOP_*` | Models, the loop's reviewers (`REVIEW_MODE`, `LOOP_REVIEWER`) and loop limits for this project only |
 
 `test_file_command` in the context map takes `{files}`, `{tests}` (Gradle `--tests` filters) and
 `{dirs}` (the files' directories as `./dir`, for `go test {dirs}`).

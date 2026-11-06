@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { tmp } from "./tmp.mjs";
-import { classify, decide, fixMessage, fixContext, recheckMessage, recheckAxes, freshTask, loop, resume } from "../lib/loop.mjs";
+import { classify, decide, fixMessage, fixContext, recheckMessage, recheckAxes, freshTask, loop, resume, ocrRoute, ocrContext, validProof } from "../lib/loop.mjs";
 
 const CFG = { maxRounds: 4, maxFixes: 3, stuck: 2, softRounds: 2, neighbours: 30, recheckSteps: 40, fresh: ["implement", "implement-hard"], selector: "advise-alt" };
 const REPRO = { file: "/tmp/r.test.ts", content: "boom()", cmd: "npx tsx --test /tmp/r.test.ts" };
@@ -413,7 +413,7 @@ test("delegate.sh review --name and --prior: runs named by the prefix, each axis
   fs.writeFileSync(prior, fixContext([F("1.spec.1")]));
   const runs = path.join(BOX, "runs", path.basename(dir).toLowerCase());
   try {
-    spawnSync("bash", ["delegate.sh", "review", dir, "agent/x", "--name", "L-rv2", "--prior", `spec=${prior}`],
+    spawnSync("bash", ["delegate.sh", "review", dir, "agent/x", "--review-mode", "split", "--name", "L-rv2", "--prior", `spec=${prior}`],
       { cwd: BOX, encoding: "utf8", env: { ...process.env, BOXIE_PROJECT_ENV: env, BOXIE_HERDR: "0" } });
     const tdir = fs.readdirSync(runs).find((f) => f.startsWith(".review-"));
     const spec = fs.readFileSync(path.join(runs, tdir, "task-review-spec.md"), "utf8");
@@ -553,5 +553,84 @@ test("loop: a neighbour regression that passes on its rerun is a flake, not sent
   assert.equal(st.next, "approve");
   assert.equal(h.calls[2].at(-1), "L-check1-again");
   assert.match(fs.readFileSync(path.join(h.P.runs, "_loops", "L", "progress.jsonl"), "utf8"), /"ev":"flaky"/);
+  h.left();
+});
+
+// ─── open-code-review as the loop's reviewer (LOOP_REVIEWER=ocr) ───────────────────────────────
+const O = (issue, extra = {}) => ({ severity: "high", confidence: "PLAUSIBLE", category: "logic", file: "a.ts", line: 3, issue, scenario: "when y", basis: "", source: "ocr", ...extra });
+
+test("ocrRoute: build claims by the build, behaviour to prove, other medium+ as advice, lows as notes", () => {
+  const f = [O("x leaks", { id: "a" }), O("This does not compile: f is undefined.", { id: "b" }), O("slow loop", { id: "c", category: "performance", severity: "medium" }),
+    O("rename it", { id: "d", category: "standard", severity: "low" }), O("Fails to build on Go 1.21.", { id: "e" })];
+  const c = ocrRoute(f, { b: 1, e: 0 }, { build: true });
+  assert.deepEqual([c.prove, c.blocking, c.dropped, c.advice, c.notes].map((x) => x.map((y) => y.id)), [["a"], ["b"], ["e"], ["c"], ["d"]]);
+  // No BUILD_CMD: a build claim is proven like any behaviour finding. LOOP_LOW=fix: lows become advice.
+  assert.deepEqual(ocrRoute(f, {}, { lowFix: true }).prove.map((y) => y.id), ["a", "b", "e"]);
+  assert.deepEqual(ocrRoute(f, {}, { lowFix: true }).advice.map((y) => y.id), ["c", "d"]);
+  assert.ok(validProof("src/a.test.ts") && !validProof("../x.ts") && !validProof("/tmp/x") && !validProof("C:/x"));
+});
+
+test("fix message: open-code-review items are reproduced first, named under proofs, or disputed", () => {
+  const m = fixMessage(1, [{ id: "1.both.1", pending: true, survived: 1, why: "no test was named for it", finding: O("x leaks", { suggestion: "free(x)" }) }], [], [], {});
+  assert.match(m, /## Reproduce first, then fix[\s\S]*`proofs`[\s\S]*`disputes`[\s\S]*## 1\.both\.1: x leaks \(high, logic\) - still open after 1 fix: no test was named for it[\s\S]*free\(x\)/);
+  assert.match(m, /Each test you wrote for a finding above/);
+});
+
+test("ocrContext: earlier rounds' fixed, sent, declined and noted findings, so they are not raised again", () => {
+  const t = ocrContext({ proofs: { p: { file: "a.test.ts", finding: O("x leaks") } }, fixedProofs: ["p"], lastSent: [O("y races")],
+    declined: [{ why: "cannot happen: guarded", finding: O("z is null") }], notes: [{ issue: "typo", severity: "low", file: "a.ts" }] });
+  assert.match(t, /Fixed, each proven by a test[\s\S]*x leaks.*a\.test\.ts[\s\S]*y races[\s\S]*z is null.*guarded[\s\S]*typo/);
+});
+
+test("loop --reviewer ocr: the fixer's test fails before its fix, passes after; later rounds review only the fixes", async () => {
+  const h = harness([
+    ["review", { "review-both-ocr": [O("x leaks"), O("rename it", { severity: "low", category: "standard" })] }],
+    ["continue", { verdict: "pass", report: { proofs: [{ finding: "1.both.1", test: "a.test.ts" }] } }],
+    ["check", { "1.both.1": 1 }],                                     // red: the code before the fix
+    ["review", { "review-both-ocr": [] }],                            // only what changed since the first review
+    ["check", { "1.both.1": 0 }],
+  ]);
+  h.deps.show = () => "test('x', () => {});\n";
+  const st = await loop(h.P, "impl", { name: "L", reviewer: "ocr" }, h.deps);
+  assert.equal(st.next, "approve");
+  const first = h.calls[0], fix = h.calls[1], red = h.calls[2], second = h.calls[3];
+  assert.deepEqual([first[first.indexOf("--roles") + 1], first[first.indexOf("--against") + 1], first[first.indexOf("--effort") + 1]], ["review-both-ocr", "b0", "medium"]);
+  assert.match(h.msg(fix), /## Reproduce first, then fix[\s\S]*## 1\.both\.1: x leaks[\s\S]*## Low[\s\S]*rename it/);
+  assert.equal(red[2], "agent/impl", "the red check runs on the code from before the fix");
+  assert.deepEqual([second[second.indexOf("--against") + 1], second[second.indexOf("--effort") + 1]], ["agent/impl", "low"]);
+  assert.match(fs.readFileSync(second[second.indexOf("--spec") + 1], "utf8"), /Sent to the fixer last round[\s\S]*x leaks/);
+  assert.deepEqual(st.rounds[1].fixed, ["1.both.1"]);
+  assert.equal(st.proofs["1.both.1"].file, "a.test.ts");
+  assert.equal(st.metrics.proven, 1);
+  h.left();
+});
+
+test("loop --reviewer ocr: a declined finding leaves the loop, listed; a test that passes before the fix proves nothing", async () => {
+  const h = harness([
+    ["review", { "review-both-ocr": [O("x leaks"), O("y races", { line: 9 })] }],
+    ["continue", { verdict: "pass", report: { proofs: [{ finding: "1.both.2", test: "b.test.ts" }], disputes: [{ finding: "1.both.1", why: "x is freed by the caller" }] } }],
+    ["check", { "1.both.2": 0 }],                                     // passes before the fix too
+    ["review", { "review-both-ocr": [] }],
+    ["continue", { verdict: "pass", report: { disputes: [{ finding: "1.both.2", why: "cannot reproduce" }] } }],
+    ["review", { "review-both-ocr": [] }],
+  ]);
+  h.deps.show = () => "test('y', () => {});\n";
+  const st = await loop(h.P, "impl", { name: "L", reviewer: "ocr" }, h.deps);
+  assert.equal(st.next, "approve");
+  assert.deepEqual(st.declined.map((d) => [d.id, d.why]), [["1.both.1", "x is freed by the caller"], ["1.both.2", "cannot reproduce"]]);
+  assert.match(h.msg(h.calls[4]), /1\.both\.2: y races .*still open after 1 fix: its test b\.test\.ts passes on the code from before the fix too/);
+  assert.deepEqual(Object.keys(st.proofs), []);
+  h.left();
+});
+
+test("loop --reviewer ocr --depth deep: the runs' consolidated list is the round's findings", async () => {
+  const h = harness([["review", { "review-both-ocr": [O("x leaks")], "review-both-ocr2": [O("x leaks memory")] }],
+    ["continue", { verdict: "pass", report: { disputes: [{ finding: "1.both.1", why: "no" }] } }], ["review", { "review-both-ocr": [] }]]);
+  fs.mkdirSync(h.P.runs, { recursive: true });
+  fs.writeFileSync(path.join(h.P.runs, "L-rv1-merged.json"), JSON.stringify([{ ...O("x leaks"), by: ["L-rv1-review-both-ocr", "L-rv1-review-both-ocr2"] }]));
+  const st = await loop(h.P, "impl", { name: "L", reviewer: "ocr", ocrDepth: "deep" }, h.deps);
+  assert.equal(h.calls[0][h.calls[0].indexOf("--roles") + 1], "review-both-ocr,review-both-ocr2");
+  assert.deepEqual(st.rounds[0].findings.map((f) => [f.id, f.review]), [["1.both.1", "L-rv1-review-both-ocr"]]);
+  assert.equal(h.calls[2][h.calls[2].indexOf("--roles") + 1], "review-both-ocr", "fix rounds: one run");
   h.left();
 });

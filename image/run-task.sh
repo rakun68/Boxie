@@ -428,7 +428,7 @@ EOF
     const a = rd("/out/report-before-check.json"), b = rd("/out/report.json");
     if (!a || typeof a !== "object") process.exit(0);
     if (!b || typeof b !== "object" || b.parse_error) { fs.writeFileSync("/out/report.json", JSON.stringify(a)); process.exit(0); }
-    for (const k of ["decisions", "context_gaps", "test_dispute", "disputes"]) {
+    for (const k of ["decisions", "context_gaps", "test_dispute", "disputes", "proofs"]) {
       const seen = new Set((b[k] ?? []).map((x) => JSON.stringify(x)));
       b[k] = [...(b[k] ?? []), ...(a[k] ?? []).filter((x) => !seen.has(JSON.stringify(x)))];
     }
