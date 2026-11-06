@@ -132,7 +132,7 @@ test("a fresh attempt gets the task, the rulings and every proof, never the earl
 function harness(script, { sealed = true } = {}) {
   const root = tmp("ab-loop-");
   const runs = path.join(root, "runs");
-  const P = { repo: root, name: "demo", runs, env: {}, map: {}, testGlobs: ["**/*.test.*"] };
+  const P = { repo: root, name: "demo", runs, env: { LOOP_REVIEWER: "split" }, map: {}, testGlobs: ["**/*.test.*"] };
   const write = (run, { role, verdict = "pass", findings, report = null, blocked = null }) => {
     fs.mkdirSync(path.join(runs, run), { recursive: true });
     fs.writeFileSync(path.join(runs, run, "summary.json"), JSON.stringify({ verdict, model: role, base: "b0", report, blocked,
@@ -496,7 +496,7 @@ test("loop: with LOOP_RECHECK_AVOID matching the standards reviewer, the spec se
     ["continue", "pass"],
     ["continue", []],
   ]);
-  h.P.env = { LOOP_RECHECK_AVOID: "review-std" };   // the fake records each run's role as its model
+  h.P.env = { ...h.P.env, LOOP_RECHECK_AVOID: "review-std" };   // the fake records each run's role as its model
   const st = await loop(h.P, "impl", { name: "L" }, h.deps);
   assert.equal(st.next, "approve");
   assert.equal(h.calls[2][2], "L-rv1-review-spec");
@@ -537,7 +537,7 @@ test("loop: an unanswered live question is no ruling; a spec-question stop keeps
 
 test("loop: LOOP_LIVE_ASK=0 and LOOP_PARK=0 run the loop as before", async () => {
   const h = harness([["review", { "review-spec": [], "review-std": [] }]]);
-  h.P.env = { LOOP_LIVE_ASK: "0", LOOP_PARK: "0" };
+  h.P.env = { ...h.P.env, LOOP_LIVE_ASK: "0", LOOP_PARK: "0" };
   const st = await loop(h.P, "impl", { name: "L" }, h.deps);
   assert.equal(st.next, "approve");
   assert.deepEqual(h.envs, [{ REVIEW_ASK: "0", BOXIE_PARK: "0" }]);

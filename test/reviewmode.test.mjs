@@ -152,7 +152,7 @@ test("loop options: review mode or roles, fresh attempts off or one role, caps",
 function harness(script, env = {}) {
   const root = tmp("ab-loopb-");
   const runs = path.join(root, "runs");
-  const P = { repo: root, name: "demo", runs, env, map: {}, testGlobs: ["**/*.test.*"] };
+  const P = { repo: root, name: "demo", runs, env: { LOOP_REVIEWER: "split", ...env }, map: {}, testGlobs: ["**/*.test.*"] };
   const write = (run, { role, verdict = "pass", findings }) => {
     fs.mkdirSync(path.join(runs, run), { recursive: true });
     fs.writeFileSync(path.join(runs, run, "summary.json"), JSON.stringify({ verdict, model: role, base: "b0", next: "x" }));

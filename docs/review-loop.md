@@ -4,7 +4,8 @@ Back to the [README](../README.md).
 
 **The review and fix loop** (`delegate.sh loop <repo> <run>`, `lib/loop.mjs`, `lib/verify.mjs`).
 The loop refuses a run with no sealed acceptance test (`--no-spec` overrides): without one, reviewers
-become the spec. Round 1 is the only full review, by the review mode's reviewers. Every behaviour finding carries a
+become the spec. The default reviewer is open-code-review ([below](#open-code-review-as-the-reviewer---reviewer-ocr-loop_reviewerocr)).
+With `--reviewer split`, round 1 is the only full review, by the review mode's reviewers. Every behaviour finding carries a
 reproduction (a file under `/tmp` and a command); one check container per round reruns all of them on
 the branch, with the existing tests next to the change (same stem, or importing a changed module; at
 most `LOOP_NEIGHBOURS`). The harness's result decides, not the reviewer's CONFIRMED:
@@ -72,7 +73,8 @@ orchestrator decides from the change's risk whether to run them.
 
 ## open-code-review as the reviewer (`--reviewer ocr`, `LOOP_REVIEWER=ocr`)
 
-Off by default until a pilot on real tasks. open-code-review has no shell, so its findings carry no
+The default (`LOOP_REVIEWER=ocr`, 2026-11-07). `--reviewer split` or `LOOP_REVIEWER=split` brings back the
+OpenCode reviewers described above. open-code-review has no shell, so its findings carry no
 reproduction: the fixer proves them, and the harness checks the proof.
 
 1. **Round 1** reviews the whole change from the run's base: one run (`LOOP_OCR_DEPTH=normal`, `--depth`)
