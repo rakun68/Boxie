@@ -8,8 +8,14 @@ Back to the [README](../README.md).
 
 - **`worker`** agent (edits; sealed globs denied) or **`reviewer`** agent (no edits in the repo;
   scratch files under `/tmp`).
-- **`scout`** subagent on Gemini 3.8 Flash: read-only search that every worker may call, so premium
-  workers spend their quota on reasoning.
+- **`scout`** subagent (`SCOUT_MODEL`): read-only search a worker may call. Off by default: 0 calls in
+  102 first-round implement runs (research/implement-2026-11-07.md).
+- **Contract first** (`CONTRACT=1`, default): a first implement round writes a contract before its first
+  edit (requirements with their tests, ripple `path:line`, edge cases with expected results, what stays
+  unchanged) and calls `contract_ready`; the plugin refuses edits until then. The first call sends the
+  task and the contract to a critic of another family (`CONTRACT_MODEL`, or `CONTRACT_MODEL_ALT` when
+  the implementer is that family), one pass with no repo, and its gaps go back to the worker.
+  `summary.json` `contract`. Not for reviews, follow-up rounds or advise/explore.
 - **Skills**: Ponytail (`ponytail`, `ponytail-review`; baked into the image), the project's own `.claude/skills/` (filtered by `worker_skills` in the context map, so
   skills that interview a human are hidden) plus Boxie's `box-verify` and `box-prove-finding`.
 - `reasoning_effort` from the role, as a model option.

@@ -56,6 +56,7 @@ made for other stacks (examples in `projects/example.env`):
 | `SENSITIVE_EXTRA` | More paths flagged `SENSITIVE` when a worker edits them |
 | `BASE_SUITE_CMD` | The base's whole suite, run once per base commit for the loop (default `TEST_CMD`) |
 | `BUILD_CMD` | The build or type check. With `LOOP_REVIEWER=ocr`, a finding claiming the code does not build is settled by it |
+| `CONTRACT`, `CONTRACT_MODEL`, `CONTRACT_MODEL_ALT` | Contract first for first implement rounds, and its critic's models (`CONTRACT=0` turns it off) |
 | `REVIEW_DEPTH`, `REVIEW_DEEP_RUNS` | A standalone `review`: `normal` (one open-code-review run) or `deep` (2 or 3 runs merged) |
 | `ROLE_*`, `REVIEW_MODE`, `REVIEW_ROLES`, `LOOP_*` | Models, the loop's reviewers (`REVIEW_MODE`, `LOOP_REVIEWER`) and loop limits for this project only |
 

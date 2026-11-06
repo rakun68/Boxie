@@ -120,10 +120,16 @@ const cfg = {
 // Mid-run questions to the orchestrator (ask-mcp.mjs). Workers; reviewers too with REVIEW_ASK=1 (the
 // review loop sets it, so a spec question is answered mid-review instead of stopping the loop). ASK=0
 // turns it off.
-if (env.ASK !== "0" && (!review || env.REVIEW_ASK === "1")) {
+const contract = env.CONTRACT_GATE === "1" && !review;
+if ((env.ASK !== "0" && (!review || env.REVIEW_ASK === "1")) || contract) {
   cfg.mcp = { orchestrator: { type: "local", command: ["node", "/opt/boxie/ask-mcp.mjs"], enabled: true } };
   // Passed by name: whether OpenCode hands its own env to a local MCP server is not checked here.
-  if (env.SPEC_GATE === "1" && !review) cfg.mcp.orchestrator.environment = { SPEC_GATE: "1" };
+  const e = {};
+  if (env.SPEC_GATE === "1" && !review) e.SPEC_GATE = "1";
+  if (env.ASK === "0") e.ASK_TOOLS = "0";
+  if (contract) Object.assign(e, { CONTRACT_GATE: "1", MODEL: model || "", CONTRACT_MODEL: env.CONTRACT_MODEL || "",
+    CONTRACT_MODEL_ALT: env.CONTRACT_MODEL_ALT || "", OMNIROUTE_BASE_URL: "{env:OMNIROUTE_BASE_URL}", OMNIROUTE_API_KEY: "{env:OMNIROUTE_API_KEY}" });
+  if (Object.keys(e).length) cfg.mcp.orchestrator.environment = e;
 }
 
 const dir = path.join(os.homedir(), ".config", "opencode");

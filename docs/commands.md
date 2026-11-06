@@ -34,6 +34,7 @@ Back to the [README](../README.md).
 ./delegate.sh continue <repo> <run> --findings RV-RUN[:n,m] [--drop RV-RUN:n] [-m TEXT]  # fix round from review findings
 ./delegate.sh tui    <repo> <run>                   # the real OpenCode TUI attached to a running worker
 ./delegate.sh check  <repo> <ref> [--test CMD] [--hidden DIR]    # tests on any commit, no agent
+./delegate.sh couple <repo> <task.md>...            # coupled tasks: one worker or in sequence; the rest parallel
 
 # ticket mode (to-tickets features)
 ./delegate.sh feature <repo> <feature-dir> [status|next|report|run [--parallel N] [--auto-land]]

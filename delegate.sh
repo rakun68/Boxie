@@ -167,6 +167,8 @@ Usage: delegate.sh <command> ...
                                  agent/* branches and worktrees of runs older than N days, scratch and
                                  temp leftovers, untagged images, stopped containers. --volumes: also
                                  the per-slot cache volumes (reseeded on next use). Dry run unless --yes
+  couple   <repo> <task.md>...    Which tasks share files or import each other: one worker (or in sequence)
+                                 for a coupled group, parallel for the rest (lib/couple.mjs). --json
   bench    list|run ...          Frozen benchmark suites (bench/README.md); BOXIE_REPOS points real-
                                  history tasks at another checkout
   clean    [<repo>] [--all]     Remove leftover containers: stopped, or whose run is over. A live run's and a
@@ -575,6 +577,8 @@ launch() {
   export TUI ROLE="${ROLE:-}" AUTOFIX="${AUTOFIX:-1}" HIDDEN="${HIDDEN_DIR:+1}" PREAMBLE="${PREAMBLE:-}"
   # Context management (image/make-config.mjs) and the self-check turn (run-task.sh), from the conf files.
   export COMPACT_AT="${COMPACT_AT:-}" COMPACT_KEEP="${COMPACT_KEEP:-}" SELF_CHECK="${SELF_CHECK:-}"
+  # Contract first, and its critic (image/preamble-contract.md, image/ask-mcp.mjs).
+  export CONTRACT="${CONTRACT:-0}" CONTRACT_MODEL="${CONTRACT_MODEL:-}" CONTRACT_MODEL_ALT="${CONTRACT_MODEL_ALT:-}"
   # The paid model a free opencode/* model hands over to at its limit (image/run-task.sh).
   export FREE_FALLBACK="${FREE_FALLBACK:-}"
   # The model that copies a reviewer's prose findings into the block when the reviewer will not (run-task.sh 3f).
@@ -587,7 +591,7 @@ launch() {
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
     AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S SPEC_GATE
-    FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_PART_MIN REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
+    CONTRACT CONTRACT_MODEL CONTRACT_MODEL_ALT FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_PART_MIN REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then
@@ -1913,6 +1917,7 @@ case "${1:-}" in
   stop) shift; cmd_stop "$@" ;;
   unpark) shift; cmd_unpark "$@" ;;
   spec-check) shift; cmd_spec_check "$@" ;;
+  couple) shift; r="${1:?usage: couple <repo> <task.md>... [--json]}"; shift; node "$(winpath "$BOX/lib/couple.mjs")" "$(winpath "$(cd "$(repo_path "$r")" && pwd)")" "$@" ;;
   ""|help|-h|--help) usage ;;
   *) usage; echo; die "unknown command $1" ;;
 esac

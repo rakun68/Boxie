@@ -20,6 +20,8 @@ const READ_DUMP = /^\s*<path>[^\n]*<\/path>\s*\n\s*<type>(?:file|directory)<\/ty
 // SPEC_GATE=1: no edit before the spec check is recorded or a question asked (image/ask-mcp.mjs writes
 // the file). Known gap 29: the check folded into the implementer instead of a session of its own.
 const SPEC_FILE = () => process.env.SPEC_GATE_FILE || "/out/spec-check.md";
+// CONTRACT_GATE=1: no edit before the contract is recorded (image/ask-mcp.mjs contract_ready).
+const CONTRACT_FILE = () => process.env.CONTRACT_FILE || "/out/contract.md";
 
 export const Boxie = async ({ directory }) => {
   let reviewTools = {};
@@ -52,6 +54,9 @@ export const Boxie = async ({ directory }) => {
       throw new Error("Rejected: check the task first (the first step in your instructions). Call spec_checked with "
         + "\"nothing undecided\" or the points the code and docs settle, or ask_orchestrator about a contradiction or open "
         + "decision. The file was not changed.");
+    if (process.env.CONTRACT_GATE === "1" && ["edit", "write", "apply_patch"].includes(input.tool) && !existsSync(CONTRACT_FILE()))
+      throw new Error("Rejected: write the contract first (the first step in your instructions) and call contract_ready with it. "
+        + "The file was not changed.");
     const text = input.tool === "write" ? output.args?.content : input.tool === "edit" ? output.args?.newString : null;
     if (typeof text === "string" && READ_DUMP.test(text))
       throw new Error("Rejected: this content is the read tool's output (<path>, <type> tags and numbered lines), not file text. "

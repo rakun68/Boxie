@@ -58,6 +58,14 @@ if [ "${REVIEW:-0}" = 1 ] && [ -d /in/ref ]; then
   log "reference files at .boxie-ref/ ($(find .boxie-ref -type f | wc -l) files)"
 fi
 
+# Contract first (CONTRACT=1, image/preamble-contract.md): a first implement round writes a contract and
+# hears a critic from another family before its first edit. Not for reviews, follow-up rounds or the
+# advise/explore preambles. Set before the config, which wires the gate into the MCP server.
+CONTRACT_GATE=0
+[ "${CONTRACT:-0}" = 1 ] && [ "${REVIEW:-0}" != 1 ] && [ -z "${CONTINUE_SESSION:-}" ] && [ -z "${PREAMBLE:-}" ] \
+  && [ "${SKIP_AGENT:-0}" != 1 ] && CONTRACT_GATE=1
+export CONTRACT_GATE
+
 # 1b. Model list, OpenCode config and server, in the background while setup and the red check run:
 #     the list alone took 8 s (OmniRoute builds 1 MB, 2026-10-23), and each stage waited for the one
 #     before it. The server starts after the config: one started before it ran no agent turn.
@@ -219,6 +227,7 @@ short and cached, and source reads faster than bytecode.'
     fi
     prompt="$(printf '%s\n' "$pre"
               [ "${SPEC_GATE:-0}" = 1 ] && { echo; cat /opt/boxie/preamble-specgate.md; }
+              [ "$CONTRACT_GATE" = 1 ] && { echo; cat /opt/boxie/preamble-contract.md; }
               [ -n "$api_note" ] && printf '\n%s\n' "$api_note"
               [ -f /in/context.md ] && { echo; cat /in/context.md; }
               printf '\n# Task\n\n'; cat /in/task.md)"
@@ -662,6 +671,8 @@ jq -n \
   --argjson recovered "$recovered" --argjson selfcheck "$self_checked" --argjson repask "$report_asked" \
   --slurpfile report "$OUT/report.json" \
   --arg specgate "${SPEC_GATE:-0}" --arg speccheck "$(cat "$OUT/spec-check.md" 2>/dev/null)" \
+  --arg cgate "$CONTRACT_GATE" --arg contract "$(cat "$OUT/contract.md" 2>/dev/null)" \
+  --argjson critic "$(jq -c . "$OUT/contract-critic.json" 2>/dev/null || echo null)" \
   --arg blocked "$blocked" --argjson sealed "$(printf '%s\n' "${sealed_touched[@]}" | sort -u | jq -R . | jq -s 'map(select(. != ""))')" \
   '{branch:$branch, base:$base, head:$head, model:$model, fell_back_from:(if $fellback == "" then null else $fellback end), commits:$commits, leftovers_committed:($leftovers==1),
     setup_exit:$setup, agent_exit:$agent, test_exit:$test, first_test_exit:$first_test, seconds:$seconds,
@@ -671,5 +682,6 @@ jq -n \
     self_check:($selfcheck == 1), report_asked:($repask == 1), final_recovered:($recovered > 0),
     report:($report[0]), session:(if $session == "" then null else $session end), round:$round, start:$start,
     questions:{asked:$asked, answered:$answered},
-    spec_check:(if $specgate == "1" then $speccheck else null end)}' >"$OUT/summary.json"
+    spec_check:(if $specgate == "1" then $speccheck else null end),
+    contract:(if $cgate == "1" then {written:($contract != ""), lines:($contract | split("\n") | map(select(explode | any(. > 32))) | length), critic:$critic} else null end)}' >"$OUT/summary.json"
 log "done"
