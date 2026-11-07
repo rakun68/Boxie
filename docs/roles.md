@@ -21,7 +21,7 @@ Back to the [README](../README.md).
 | review-both-alt | Opus 4.6 | review-both when DeepSeek wrote the code |
 | transcribe | `opencode/deepseek-v4.1-flash-free` (free) | copies a review's findings out of its prose into the findings block when the reviewer did not write one; adds and judges nothing |
 | adjudicate | Gemini 3.8 Flash high | settles a disputed finding (read-only); Kimi K3 left: cursor quota empty (2026-10-27) |
-| advise / advise-alt | Sol 6.1 high (`cx/gpt-6.1-sol-high`) / Opus 4.6 | advisors, never coders: `ask` is one pass; in `council` advise reads the repo read-only; advise-alt also picks between fresh attempts |
+| advise / advise-alt | DeepSeek V4 Pro high (`deepseek/deepseek-v4-pro-high`, Sol 6.1 left 2026-11-07) / Opus 4.6 | advisors, never coders: `ask` is one pass; in `council` advise reads the repo read-only; advise-alt also picks between fresh attempts |
 | merge | `deepseek/deepseek-flash-high` | `council`'s merger: one pass over the members' answers into the digest, told to weigh evidence, not the advisor. `COUNCIL_MERGE` or `council --merge` names another role or an OmniRoute model id |
 | free-deepseek / free-glm | `opencode/deepseek-v4.1-flash-free` / `opencode/glm-5.3-flash-free` | free models on OpenCode's own provider, not OmniRoute: container runs only. At the free limit the run goes on with `FREE_FALLBACK` in the same session (`summary.json` `fell_back_from`). The free tier may keep prompts for training |
 
@@ -38,7 +38,7 @@ reviewer gets the spec, with the same prompts everywhere (`lib/ticket/review-*.m
 Budget (user, 2026-10-12/13). Quota pools: Opus and Sonnet share one, all Gemini models share one;
 DeepSeek and Kimi each have their own. Gemini does the bulk; DeepSeek takes escalation, the quick
 lane, the standards review and review-both; Opus (~$30-40 per 5 hours) the spec review and prose;
-Sol 6.1 (`cx/`, the Codex subscription) advice; Gemini disputed findings (Kimi K3 left 2026-10-27). Unused: Sonnet (spends Opus's pool) and Composer
+DeepSeek V4 Pro high advice (Sol 6.1 left the catalog 2026-11-07); Gemini disputed findings (Kimi K3 left 2026-10-27). Unused: Sonnet (spends Opus's pool) and Composer
 (misreported tool results and passed an impossible task without BLOCKED, research/findings.md §6).
 
 Antigravity Gemini 3.8 Flash comes as three ids, `-low`, `-medium`, `-high` (top); since OmniRoute

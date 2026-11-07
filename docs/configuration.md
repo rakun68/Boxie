@@ -56,7 +56,7 @@ made for other stacks (examples in `projects/example.env`):
 | `SENSITIVE_EXTRA` | More paths flagged `SENSITIVE` when a worker edits them |
 | `BASE_SUITE_CMD` | The base's whole suite, run once per base commit for the loop (default `TEST_CMD`) |
 | `BUILD_CMD` | The build or type check. With `LOOP_REVIEWER=ocr`, a finding claiming the code does not build is settled by it |
-| `CONTRACT`, `CONTRACT_MODEL`, `CONTRACT_MODEL_ALT` | Contract first for first implement rounds, and its critic's models: `CONTRACT_MODEL` is a list tried in order, then `CONTRACT_MODEL_ALT`, skipping the implementer's family (`CONTRACT=0` turns it off) |
+| `CONTRACT`, `CONTRACT_MODEL`, `CONTRACT_MODEL_ALT` | Contract first for first implement rounds, and its critic's models: `CONTRACT_MODEL` is a list tried in order, then `CONTRACT_MODEL_ALT`, skipping the implementer's family. Both empty by default since 2026-11-07: no critic, the worker still writes the contract (`CONTRACT=0` turns that off) |
 | `READ_MIN_LINES` | A read asking for fewer lines gets this many (default 150, `0` off). Fewer paging steps |
 | `WRAP_MIN` | Minutes before an implement run's cut when the worker is told to commit what passes and report (default 8, `0` off) |
 | `REVIEW_DEPTH`, `REVIEW_DEEP_RUNS` | A standalone `review`: `normal` (one open-code-review run) or `deep` (2 or 3 runs merged) |

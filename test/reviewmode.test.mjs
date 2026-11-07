@@ -56,7 +56,7 @@ test("delegate.sh roles: the default stack, and the review mode a project sets",
   assert.deepEqual(row("REVIEW_MODE"), ["REVIEW_MODE", "project", "both"]);
   assert.equal(row("LOOP_MAX_ROUNDS")?.[2], "5");
   assert.equal(row("adjudicate")?.[2], "antigravity/gemini-3.8-flash-high");
-  assert.equal(row("advise")?.[2], "cx/gpt-6.1-sol-high");
+  assert.equal(row("advise")?.[2], "deepseek/deepseek-v4-pro-high");
   assert.equal(row("review-spec")?.[2], "antigravity/claude-opus-4-6-thinking");
   assert.deepEqual(row("review-std")?.slice(2), ["opencode/deepseek-v4.1-flash-free"]);
   assert.deepEqual(row("review-both")?.slice(2), ["deepseek/deepseek-flash-high"]);

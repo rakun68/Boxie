@@ -26,5 +26,5 @@ test("configModels: roles, effort words, lists, defaults, prefixes, and a local 
 test("configModels: boxie.conf parses, and names the default implementer", () => {
   const m = configModels(fs.readFileSync(path.join(import.meta.dirname, "..", "boxie.conf"), "utf8"));
   assert.ok(m.get("ROLE_implement")?.length === 1);
-  assert.ok(m.get("CONTRACT_MODEL")?.length >= 2);
+  assert.equal(m.get("ROLE_advise")?.[0], "deepseek/deepseek-v4-pro-high");
 });
