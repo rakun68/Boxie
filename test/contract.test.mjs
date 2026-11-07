@@ -118,3 +118,26 @@ test("contract_ready: a critic that fails leaves the contract recorded and the e
     assert.ok(JSON.parse(fs.readFileSync(path.join(out, "contract-critic.json"), "utf8")).error);
   } finally { s.close(); }
 });
+
+test("contract_ready: a critic model the gateway refuses hands over to the next in the list", async () => {
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    let body = ""; req.on("data", (d) => { body += d; });
+    req.on("end", () => { const m = JSON.parse(body).model; seen.push(m);
+      if (m === "cx/gone") { res.statusCode = 400; res.end("{}"); return; }
+      res.end(JSON.stringify({ choices: [{ message: { content: "no gaps" } }] })); });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const out = tmp("ab-cout-"), inn = tmp("ab-cin-");
+  const s = mcp({ OUT_DIR: out, IN_DIR: inn, CONTRACT_GATE: "1", ASK_TOOLS: "0", MODEL: "antigravity/gemini-3.8-flash-high",
+    CONTRACT_MODEL: "cx/gone cx/gpt-6-luna", CONTRACT_MODEL_ALT: "antigravity/gemini-3.8-flash-high",
+    OMNIROUTE_BASE_URL: `http://127.0.0.1:${server.address().port}`, OMNIROUTE_API_KEY: "k" });
+  try {
+    const r = (await s.call("tools/call", { name: "contract_ready", arguments: { contract: "Requirements: one thing in a.js, its test a.test.js" } })).content[0].text;
+    assert.match(r, /Edits are open/);
+    assert.deepEqual(seen, ["cx/gone", "cx/gpt-6-luna"], "the implementer's own family is never asked");
+    const c = JSON.parse(fs.readFileSync(path.join(out, "contract-critic.json"), "utf8"));
+    assert.equal(c.model, "cx/gpt-6-luna");
+    assert.equal(c.failed[0].error, "HTTP 400");
+  } finally { s.close(); server.close(); }
+});

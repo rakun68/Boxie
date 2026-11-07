@@ -10,14 +10,14 @@ Back to the [README](../README.md).
 ./delegate.sh answer <repo> <run-name> <id> (-m TEXT | -f FILE)                 # answer one; it keeps working
 ./delegate.sh fanout <repo> <task.md> --roles implement,feature [--base REF] ...   # parallel, comparison table
 ./delegate.sh review <repo> <branch> [--deep | --review-mode split|both | --roles a,b] [--against REF] [--focus TEXT]  # read-only review: one open-code-review run, --deep several merged
-./delegate.sh loop   <repo> <run> [--spec FILE] [--max-rounds N] [--reviewer ocr|split] [--depth normal|deep] [--review-mode M] [--roles a,b] [--fresh R|none]  # review, verify, fix until nothing blocks
+./delegate.sh loop   <repo> <run> [--spec FILE] [--max-rounds N] [--reviewer ocr|split] [--depth normal|deep] [--review-mode M] [--roles a,b] [--fresh R|none] [--holdout DIR [--holdout-cmd C]]  # review, verify, fix until nothing blocks
 ./delegate.sh loop resume <repo> <loop> [--answer T] [--drop IDs] [--add F] [-m T] [--max-rounds N] [--review-mode M]  # the orchestrator's decisions
 ./delegate.sh wait   <repo> <run-or-loop>... [--any] [--questions]  # block until they end; their short reports
 ./delegate.sh ask    <repo> [--role advise] [--prompt q.md] [--file ctx ...]       # one-pass advisor
 ./delegate.sh show   <repo> <name>
 ./delegate.sh clean  [<repo>] [--all]                # stopped and orphaned containers; live and parked runs stay
 ./delegate.sh stop   <repo> <run|loop>...           # stop a run now (a loop name: its rounds and base suite)
-./delegate.sh doctor [<repo>]                       # prerequisites, images, OmniRoute route; fixes
+./delegate.sh doctor [<repo>]                       # prerequisites, images, OmniRoute route, configured models in its catalog; fixes
 ./delegate.sh gc     [--days N] [--yes]             # disk: old session archives, model lists, untagged images
 
 # ledger, trust, dashboard

@@ -16,6 +16,12 @@ Back to the [README](../README.md).
   task and the contract to a critic of another family (`CONTRACT_MODEL`, or `CONTRACT_MODEL_ALT` when
   the implementer is that family), one pass with no repo, and its gaps go back to the worker.
   `summary.json` `contract`. Not for reviews, follow-up rounds or advise/explore.
+- **Read widening** (`READ_MIN_LINES`, default 150): the plugin raises a read's `limit` to this before
+  the tool runs, so a model that pages a file 40 lines at a time takes fewer steps. Offset stays.
+- **Wrap-up note** (`WRAP_MIN`, default 8): `run-task.sh` writes the cut's epoch to `/out/deadline`, and
+  `WRAP_MIN` minutes before it the plugin appends one note to a tool result: commit what passes and
+  report. Once per cut. Not for reviews, which have their own report turn.
+- `image/plugin.js` exports `Boxie` alone. OpenCode runs every function the module exports as a plugin.
 - **Skills**: Ponytail (`ponytail`, `ponytail-review`; baked into the image), the project's own `.claude/skills/` (filtered by `worker_skills` in the context map, so
   skills that interview a human are hidden) plus Boxie's `box-verify` and `box-prove-finding`.
 - `reasoning_effort` from the role, as a model option.

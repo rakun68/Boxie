@@ -23,7 +23,33 @@ const SPEC_FILE = () => process.env.SPEC_GATE_FILE || "/out/spec-check.md";
 // CONTRACT_GATE=1: no edit before the contract is recorded (image/ask-mcp.mjs contract_ready).
 const CONTRACT_FILE = () => process.env.CONTRACT_FILE || "/out/contract.md";
 
+// READ_MIN_LINES: a read asking for fewer lines gets this many. Gemini asked for 100 lines or fewer in
+// 10880 of 12584 reads (mostly 25-60), and every read is a model step at 4-9 s with the whole context
+// (research/factory-2026-11-07.md). 0 keeps the model's own limit.
+function widenRead(args, min = Number(process.env.READ_MIN_LINES || 0)) {
+  if (min > 0 && args && typeof args.limit === "number" && args.limit < min) args.limit = min;
+  return args;
+}
+
+// WRAP_MIN minutes before the cut (run-task.sh writes the cut's epoch to /out/deadline), one note on
+// a tool result: finish to a committed, passing state and report. 14 Gemini implement runs hit the cut
+// mid-work with no report (ledger, 2026-10-12..11-06).
+const DEADLINE = () => `${process.env.OUT_DIR || "/out"}/deadline`;
+// `seen` holds the cut already noted: a parked container's server lives on into the next round, which
+// writes a new cut.
+function wrapNote(seen, now = Date.now() / 1000, file = DEADLINE(), wrapMin = Number(process.env.WRAP_MIN || 0)) {
+  if (!(wrapMin > 0) || !existsSync(file)) return null;
+  const cut = Number(readFileSync(file, "utf8").trim());
+  if (!cut || seen.cut === cut || now < cut - wrapMin * 60) return null;
+  seen.cut = cut;
+  const left = Math.max(0, Math.round((cut - now) / 60));
+  return `\n\n[boxie] About ${left} minute(s) left before this run is cut. Stop exploring and starting new work. `
+    + "Get what you have to a state that builds and passes the task's test, commit it, and write the final report "
+    + "now, listing what is done and what is not.";
+}
+
 export const Boxie = async ({ directory }) => {
+  const wrapped = { cut: null };
   let reviewTools = {};
   if (process.env.REVIEW === "1" && existsSync("/in/bundles.json")) {
     const { tool } = await import("@opencode-ai/plugin");
@@ -50,6 +76,7 @@ export const Boxie = async ({ directory }) => {
   return {
   tool: reviewTools,
   "tool.execute.before": async (input, output) => {
+    if (input.tool === "read") widenRead(output.args);
     if (process.env.SPEC_GATE === "1" && ["edit", "write", "apply_patch"].includes(input.tool) && !existsSync(SPEC_FILE()))
       throw new Error("Rejected: check the task first (the first step in your instructions). Call spec_checked with "
         + "\"nothing undecided\" or the points the code and docs settle, or ask_orchestrator about a contradiction or open "
@@ -63,6 +90,8 @@ export const Boxie = async ({ directory }) => {
         + "Write only the file's own lines, without the tags and without the 'N: ' line numbers. The file was not changed.");
   },
   "tool.execute.after": async (input, output) => {
+    const note = process.env.REVIEW === "1" ? null : wrapNote(wrapped);
+    if (note) output.output = `${output.output ?? ""}${note}`;
     // Dependency discovery by hand (javap, unzip, jar listings under the build caches): point at `api`,
     // whose answers are short and cached. t51 (2026-10-16): 36 of 61 shell calls were this.
     const cmd = input.tool === "bash" ? String(input.args?.command ?? "") : "";
@@ -80,3 +109,7 @@ export const Boxie = async ({ directory }) => {
   },
   };
 };
+// Helpers for the tests, as properties: OpenCode runs every function the module exports as a plugin
+// (an exported helper made every run fail with UnknownError on its first step, 2026-11-07).
+Boxie.widenRead = widenRead;
+Boxie.wrapNote = wrapNote;

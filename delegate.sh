@@ -95,7 +95,7 @@ Usage: delegate.sh <command> ...
                                  blockers; the diff split into parts reviewed side by side in one
                                  container, no setup. --roles review-both-ocr runs open-code-review
                                  (lib/ocr.mjs), review-both-ocr2 and -ocr3 further runs of it. Exits 3 when a reviewer did not finish
-  loop    <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE]
+  loop    <repo> <run> [--spec FILE ...] [--name N] [--max-rounds N] [--reviews RV1,RV2] [--no-spec] [--add FILE] [--holdout DIR [--holdout-cmd C]]
                         [--reviewer ocr|split] [--depth normal|deep]
                         [--review-mode split|both] [--roles a,b] [--fresh ROLES|none] [--max-fixes N] [--effort LEVEL]
                                  --reviewer ocr (LOOP_REVIEWER): open-code-review reviews the whole
@@ -579,6 +579,7 @@ launch() {
   export COMPACT_AT="${COMPACT_AT:-}" COMPACT_KEEP="${COMPACT_KEEP:-}" SELF_CHECK="${SELF_CHECK:-}"
   # Contract first, and its critic (image/preamble-contract.md, image/ask-mcp.mjs).
   export CONTRACT="${CONTRACT:-0}" CONTRACT_MODEL="${CONTRACT_MODEL:-}" CONTRACT_MODEL_ALT="${CONTRACT_MODEL_ALT:-}"
+  export READ_MIN_LINES="${READ_MIN_LINES:-0}" WRAP_MIN="${WRAP_MIN:-0}"
   # The paid model a free opencode/* model hands over to at its limit (image/run-task.sh).
   export FREE_FALLBACK="${FREE_FALLBACK:-}"
   # The model that copies a reviewer's prose findings into the block when the reviewer will not (run-task.sh 3f).
@@ -591,7 +592,7 @@ launch() {
   local envnames=(MODEL VARIANT ALLOW_WEB REVIEW REVIEW_ASK BRANCH BASE_SHA SKIP_AGENT TEST_CMD SETUP_CMD TIMEOUT_MIN SEALED
     EFFORT SCOUT_MODEL SKILLS_ALLOW START_SHA CONTINUE_SESSION ROUND ASK ASK_WAIT_S ASK_TIMEOUT_MIN RED_CMD STEPS AUTOFIX
     AUTOFIX_MIN TUI ROLE HIDDEN PREAMBLE COMPACT_AT COMPACT_KEEP SELF_CHECK SETUP_RETRIES SERVE_WAIT_S SPEC_GATE
-    CONTRACT CONTRACT_MODEL CONTRACT_MODEL_ALT FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_PART_MIN REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
+    CONTRACT CONTRACT_MODEL CONTRACT_MODEL_ALT READ_MIN_LINES WRAP_MIN FREE_FALLBACK TRANSCRIBE_MODEL REVIEW_SETUP REVIEW_FANOUT REVIEW_PART_MIN REVIEW_REPORT_MIN REVIEW_FILTER REVIEW_FILTER_MIN FILTER_MODEL)
   local runenv=() execenv=(-e REUSE=1)
   for v in "${envnames[@]}"; do runenv+=(-e "$v"); execenv+=(-e "$v=${!v:-}"); done
   if [ "$reuse" = 1 ]; then

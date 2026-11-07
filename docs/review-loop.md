@@ -109,3 +109,21 @@ Why this shape (54 recorded loops, 2026-11-05): the first review found 56 of the
 of the review and fix rounds; a harness check took 92 s at the median against 522 s for a review and
 884 s for a fix; 14 of the 74 blocking findings were requirements, so the task and every `--spec` reach
 open-code-review as its background.
+
+## Holdout acceptance tests (`--holdout DIR`)
+
+Acceptance tests the worker never sees, after StrongDM's scenarios kept outside the code base
+(research/factory-2026-11-07.md). A sealed test is visible, and a worker can fit the code to it.
+
+- `DIR` mirrors repo paths, as a bench task's `hidden/` does: `DIR/test/accept.test.ts` lands at
+  `test/accept.test.ts`.
+- `--holdout-cmd` runs them. Without it, the project's `test_file_command` over the files.
+- When the loop would approve, a check container copies them in and runs them on the branch.
+  - Pass: the loop approves, and the reason says so.
+  - Fail: one more fix round. The fixer gets the last 80 lines of their output (test names and messages),
+    never their source or paths. Then review, and the holdout runs again.
+  - After `LOOP_HOLDOUT_FIXES` (default 2) such rounds: `decide`. No test result: `fix_environment`.
+- `state.json` `holdoutRuns` lists each run, with its branch and exit.
+
+Write them as the user would check the result, with the inputs the task implies but does not spell
+out. They should fail on the base. The loop does not check that.

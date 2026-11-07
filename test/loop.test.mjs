@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { tmp } from "./tmp.mjs";
-import { classify, decide, fixMessage, fixContext, recheckMessage, recheckAxes, freshTask, loop, resume, ocrRoute, ocrContext, validProof } from "../lib/loop.mjs";
+import { classify, decide, fixMessage, fixContext, recheckMessage, recheckAxes, freshTask, loop, resume, ocrRoute, ocrContext, validProof, holdoutGate, holdoutMessage, holdoutFiles } from "../lib/loop.mjs";
 
 const CFG = { maxRounds: 4, maxFixes: 3, stuck: 2, softRounds: 2, neighbours: 30, recheckSteps: 40, fresh: ["implement", "implement-hard"], selector: "advise-alt" };
 const REPRO = { file: "/tmp/r.test.ts", content: "boom()", cmd: "npx tsx --test /tmp/r.test.ts" };
@@ -159,7 +159,10 @@ function harness(script, { sealed = true } = {}) {
     else if (cmd === "continue" && args.includes("--at")) { if (step) write(name, { role: roleOf(args[2]), findings: step, verdict: "review" }); }
     else if (cmd === "check") {
       fs.mkdirSync(path.join(runs, name), { recursive: true });
-      fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).map(([id, e]) => (id === "neighbours"
+      // __exit / __log: a holdout check's test exit (summary.json) and its log.
+      if (step.__exit !== undefined) fs.writeFileSync(path.join(runs, name, "summary.json"), JSON.stringify({ test_exit: step.__exit }));
+      if (step.__log !== undefined) { fs.writeFileSync(path.join(runs, name, "test.log"), step.__log); ask(); return; }
+      fs.writeFileSync(path.join(runs, name, "test.log"), Object.entries(step).filter(([id]) => !id.startsWith("__")).map(([id, e]) => (id === "neighbours"
         ? `BOXIE-NEIGHBOURS exit ${e}\n    not ok 1 - trusted child\n${e ? "BOXIE-NEIGHBOURS-BASE exit 0\n" : ""}`
         : `BOXIE-REPRO ${id} exit ${e}\n`)).join(""));
     } else if (cmd === "ask") fs.writeFileSync(log, step);
@@ -633,4 +636,81 @@ test("loop --reviewer ocr --depth deep: the runs' consolidated list is the round
   assert.deepEqual(st.rounds[0].findings.map((f) => [f.id, f.review]), [["1.both.1", "L-rv1-review-both-ocr"]]);
   assert.equal(h.calls[2][h.calls[2].indexOf("--roles") + 1], "review-both-ocr", "fix rounds: one run");
   h.left();
+});
+
+// ─── holdout acceptance tests ─────────────────────────────────────────────────────────────
+test("holdoutGate: pass approves, a failure gets fix rounds up to the cap, no result stops", () => {
+  assert.equal(holdoutGate(0, 0, 2).action, "approve");
+  assert.equal(holdoutGate(1, 0, 2).action, "fix");
+  assert.equal(holdoutGate(1, 1, 2).action, "fix");
+  assert.deepEqual([holdoutGate(1, 2, 2).action, holdoutGate(1, 2, 2).next], ["stop", "decide"]);
+  assert.equal(holdoutGate(null, 0, 2).next, "fix_environment");
+  assert.equal(holdoutGate(1, 0, 0).action, "stop", "LOOP_HOLDOUT_FIXES=0: report, never fix");
+});
+
+test("holdoutMessage: the output's last lines without harness noise", () => {
+  const m = holdoutMessage("[boxie] copying hidden files\n+ node --test\nnot ok 3 - sorts numerically\n  expected: 10\n");
+  assert.match(m, /cannot see[\s\S]*not ok 3 - sorts numerically\n  expected: 10/);
+  assert.doesNotMatch(m, /copying hidden|\+ node/);
+  const real = holdoutMessage([
+    "✖ ties keep file order (0.4ms)",
+    "  AssertionError [ERR_ASSERTION]: clikit report: unknown option --sort",
+    "      at TestContext.<anonymous> (file:///work/repo/.bench/sort-hidden.test.ts:19:10)",
+    "      at Test.run (node:internal/test_runner/test:1402:25)",
+    "    code: 'ERR_ASSERTION',",
+    "  }",
+    "test at .bench/sort-hidden.test.ts:26:1",
+    "# see .bench/sort-hidden.test.ts:30",
+  ].join("\n"), 80, [".bench/sort-hidden.test.ts"]);
+  assert.match(real, /✖ ties keep file order[\s\S]*unknown option --sort/);
+  assert.doesNotMatch(real, /sort-hidden|node:internal|ERR_ASSERTION',/, "no holdout path, stack frame or bookkeeping");
+  assert.match(real, /# see <held-back test>/);
+});
+
+test("loop --holdout: a clean review runs the holdout; its failure goes to a fixer as output only, then it passes", async () => {
+  const hold = tmp("ab-hold-");
+  fs.mkdirSync(path.join(hold, "test"), { recursive: true });
+  fs.writeFileSync(path.join(hold, "test", "accept.test.ts"), "SECRET_ASSERTION()\n");
+  assert.deepEqual(holdoutFiles(hold), ["test/accept.test.ts"]);
+  const h = harness([
+    ["review", { "review-spec": [], "review-std": [] }],
+    ["check", { __exit: 1, __log: "not ok 1 - report sorts numerically\n  expected 10 got 9\n" }],
+    ["continue", "pass"],
+    ["continue", []],
+    ["check", { __exit: 0, __log: "ok 1 - report sorts numerically\n" }],
+  ]);
+  const st = await loop(h.P, "impl", { name: "L", holdout: hold, holdoutCmd: "node --test test/accept.test.ts" }, h.deps);
+  assert.equal(st.next, "approve");
+  assert.match(st.reason, /holdout acceptance checks pass/);
+  const ck = h.calls[1];
+  assert.deepEqual([ck[0], ck[2], ck[ck.indexOf("--test") + 1], ck[ck.indexOf("--hidden") + 1]], ["check", "agent/impl", "node --test test/accept.test.ts", hold]);
+  const fixMsg = h.msg(h.calls[2]);
+  assert.match(fixMsg, /holds back fail[\s\S]*report sorts numerically/);
+  assert.doesNotMatch(fixMsg, /SECRET_ASSERTION|accept\.test/, "the holdout's source and path never reach the fixer");
+  assert.equal(h.calls[4][2], "agent/L-fix1");
+  assert.deepEqual(st.holdoutRuns.map((r) => r.exit), [1, 0]);
+  h.left();
+});
+
+test("loop --holdout: still failing after LOOP_HOLDOUT_FIXES fix rounds, the orchestrator decides", async () => {
+  const hold = tmp("ab-hold-");
+  fs.writeFileSync(path.join(hold, "accept.test.ts"), "x\n");
+  const h = harness([
+    ["review", { "review-spec": [], "review-std": [] }],
+    ["check", { __exit: 1, __log: "not ok 1 - a\n" }],
+    ["continue", "pass"], ["continue", []],
+    ["check", { __exit: 1, __log: "not ok 1 - a\n" }],
+  ]);
+  h.P.env = { ...h.P.env, LOOP_HOLDOUT_FIXES: "1" };
+  const st = await loop(h.P, "impl", { name: "L", holdout: hold, holdoutCmd: "node --test accept.test.ts" }, h.deps);
+  assert.equal(st.next, "decide");
+  assert.match(st.reason, /still fail after 1 fix round/);
+  h.left();
+});
+
+test("loop --holdout: no command and no test_file_command is refused at the start", async () => {
+  const hold = tmp("ab-hold-");
+  fs.writeFileSync(path.join(hold, "accept.test.ts"), "x\n");
+  const h = harness([]);
+  await assert.rejects(loop(h.P, "impl", { name: "L", holdout: hold }, h.deps), /--holdout-cmd/);
 });

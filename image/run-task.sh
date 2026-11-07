@@ -265,6 +265,9 @@ short and cached, and source reads faster than bytecode.'
       FANOUT="${REVIEW_FANOUT:-8}" node /opt/boxie/fanout.mjs 2>>"$OUT/harness.log"
     agent_exit=$?
   else
+  # The cut's time, for the plugin's wrap-up note WRAP_MIN before it (image/plugin.js). Not for a review,
+  # which has its own report turn after the cut.
+  [ "${REVIEW:-0}" = 1 ] || echo $(( $(date +%s) + agent_min * 60 )) >"$OUT/deadline"
   timeout --kill-after=30 "${agent_min}m" \
     opencode run --auto --format json --agent "$agent_name" -m "$OC_MODEL" "${attach_args[@]}" "${variant_args[@]}" "${session_args[@]}" --title "$BRANCH" \
     <"$OUT/prompt.md" >"$OUT/events.jsonl" 2>"$OUT/opencode.log"

@@ -108,16 +108,18 @@ Read the task as its author meant it. For each behaviour the task adds or change
 
 List only those gaps: each one a case the contract does not cover or gets wrong, with the result the task's author would expect. Never: style, naming, refactors, new features or options, extra tests for behaviour that is already pinned, or anything the contract already covers. At most 8 items, the most likely to bite first, one line each. If nothing is missing, answer exactly: no gaps.`;
 
-export function criticModel(env = process.env) {
-  const fam = (id) => (/deepseek/i.test(id) ? "deepseek" : /gemini/i.test(id) ? "gemini" : /claude|opus|sonnet/i.test(id) ? "claude" : /gpt|cx\//i.test(id) ? "gpt" : id);
-  const main = env.CONTRACT_MODEL || "", alt = env.CONTRACT_MODEL_ALT || "";
-  return main && env.MODEL && fam(main) === fam(env.MODEL) && alt ? alt : main;
+// CONTRACT_MODEL: models to try in order (spaces or commas), then CONTRACT_MODEL_ALT; any of the implementer's
+// family is skipped. A list, because a model can leave the gateway's catalog: cx/gpt-6.1-sol-high did on
+// 2026-11-07 and every critique failed with HTTP 400 until the run ended.
+const family = (id) => (/deepseek/i.test(id) ? "deepseek" : /gemini/i.test(id) ? "gemini" : /claude|opus|sonnet/i.test(id) ? "claude" : /gpt|cx\//i.test(id) ? "gpt" : id);
+export function criticModels(env = process.env) {
+  const all = [...String(env.CONTRACT_MODEL || "").split(/[\s,]+/), String(env.CONTRACT_MODEL_ALT || "")].filter(Boolean);
+  const own = env.MODEL ? family(env.MODEL) : null;
+  return [...new Set(all.filter((m) => family(m) !== own))];
 }
+export const criticModel = (env = process.env) => criticModels(env)[0] ?? "";
 
-async function critique(contract) {
-  const model = criticModel();
-  if (!model) return null;
-  const task = (() => { try { return fs.readFileSync(path.join(IN, "task.md"), "utf8"); } catch { return ""; } })();
+async function ask1(model, task, contract) {
   const t0 = Date.now();
   try {
     const res = await fetch(`${process.env.OMNIROUTE_BASE_URL}/chat/completions`, {
@@ -137,6 +139,20 @@ async function critique(contract) {
   } catch (e) {
     return { model, error: String(e.message || e), seconds: Math.round((Date.now() - t0) / 1000) };
   }
+}
+
+async function critique(contract) {
+  const models = criticModels();
+  if (!models.length) return null;
+  const task = (() => { try { return fs.readFileSync(path.join(IN, "task.md"), "utf8"); } catch { return ""; } })();
+  const failed = [];
+  for (const m of models) {
+    const c = await ask1(m, task, contract);
+    if (!c.error) return failed.length ? { ...c, failed } : c;
+    failed.push(c);
+    note(`contract critic ${m} failed (${c.seconds} s): ${c.error}`);
+  }
+  return { ...failed.at(-1), failed };
 }
 
 async function call(name, args) {
