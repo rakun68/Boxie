@@ -661,6 +661,10 @@ if [ "$commits" -gt 0 ]; then
 fi
 [ -s "$OUT/report.json" ] || echo null >"$OUT/report.json"
 recovered="$(grep -c '"recovered":true' "$OUT/events.jsonl" 2>/dev/null)"; recovered="${recovered:-0}"
+# The container's peak memory (cgroup v2, else v1), for sizing MEMORY and PROJECT_SLOTS from evidence:
+# PROJECT_SLOTS=1 on Lykos rested on a VM crash, not on what a run uses.
+mem_peak="$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes 2>/dev/null)"
+case "$mem_peak" in ''|*[!0-9]*) mem_peak=null ;; esac
 jq -n \
   --arg branch "$BRANCH" --arg base "$BASE_SHA" --arg head "$(git rev-parse HEAD)" --arg model "${MODEL:-}" --arg fellback "$fell_back_from" \
   --argjson commits "$commits" --argjson leftovers "$leftovers" \
@@ -671,7 +675,7 @@ jq -n \
   --argjson answered "$(ls /out/questions 2>/dev/null | grep -cE '^[0-9]+\.answer\.md$')" \
   --arg session "${session_id:-}" --argjson round "${ROUND:-1}" --arg start "$START_SHA" \
   --argjson red "$red_exit" --argjson weak "$weak_spec" --argjson autofix "$autofix" --argjson cut "$cut_resumes" \
-  --argjson recovered "$recovered" --argjson selfcheck "$self_checked" --argjson repask "$report_asked" \
+  --argjson recovered "$recovered" --argjson mempeak "$mem_peak" --argjson selfcheck "$self_checked" --argjson repask "$report_asked" \
   --slurpfile report "$OUT/report.json" \
   --arg specgate "${SPEC_GATE:-0}" --arg speccheck "$(cat "$OUT/spec-check.md" 2>/dev/null)" \
   --arg cgate "$CONTRACT_GATE" --arg contract "$(cat "$OUT/contract.md" 2>/dev/null)" \
@@ -679,7 +683,7 @@ jq -n \
   --arg blocked "$blocked" --argjson sealed "$(printf '%s\n' "${sealed_touched[@]}" | sort -u | jq -R . | jq -s 'map(select(. != ""))')" \
   '{branch:$branch, base:$base, head:$head, model:$model, fell_back_from:(if $fellback == "" then null else $fellback end), commits:$commits, leftovers_committed:($leftovers==1),
     setup_exit:$setup, agent_exit:$agent, test_exit:$test, first_test_exit:$first_test, seconds:$seconds,
-    phase_seconds:{setup:$setup_s, agent:$agent_s, test:$test_s},
+    phase_seconds:{setup:$setup_s, agent:$agent_s, test:$test_s}, mem_peak_mb:(if $mempeak == null then null else ($mempeak / 1048576 | floor) end),
     blocked:(if $blocked == "" then null else $blocked end), sealed_violation:$sealed,
     review:($review==1), review_violation:$violation, deps:$deps, review_setup_exit:$rsetup, review_cut:(if $cutby == "" then null else $cutby end), red_exit:$red, weak_spec:$weak, autofix:$autofix, cut_resumes:$cut,
     self_check:($selfcheck == 1), report_asked:($repask == 1), final_recovered:($recovered > 0),

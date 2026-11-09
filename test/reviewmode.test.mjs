@@ -8,10 +8,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmp } from "./tmp.mjs";
-import { reviewRoles, axisOf, promptOf } from "../lib/reviewmode.mjs";
+import { reviewRoles, ticketReviewRoles, axisOf, promptOf } from "../lib/reviewmode.mjs";
 import { useAlt, specRole } from "../lib/family.mjs";
 import { finalBlock } from "../lib/ledger.mjs";
-import { overrides, loopRoles, fixReviewer, recheckAxes, settings, loop, resume } from "../lib/loop.mjs";
+import { overrides, loopRoles, fixReviewer, recheckAxes, settings, loop, resume, isOcr } from "../lib/loop.mjs";
 
 const BOX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -56,7 +56,7 @@ test("delegate.sh roles: the default stack, and the review mode a project sets",
   assert.deepEqual(row("REVIEW_MODE"), ["REVIEW_MODE", "project", "both"]);
   assert.equal(row("LOOP_MAX_ROUNDS")?.[2], "5");
   assert.equal(row("adjudicate")?.[2], "antigravity/gemini-3.8-flash-high");
-  assert.equal(row("advise")?.[2], "deepseek/deepseek-v4-pro-high");
+  assert.equal(row("advise")?.[2], "deepseek/deepseek-flash-high");
   assert.equal(row("review-spec")?.[2], "antigravity/claude-opus-4-6-thinking");
   assert.deepEqual(row("review-std")?.slice(2), ["opencode/deepseek-v4.1-flash-free"]);
   assert.deepEqual(row("review-both")?.slice(2), ["deepseek/deepseek-flash-high"]);
@@ -225,4 +225,18 @@ test("loop --fresh none: a stall stops for the orchestrator instead of starting 
   assert.equal(st.next, "decide");
   assert.match(st.reason, /fresh attempts are off/);
   h.left();
+});
+
+test("ticket mode reviews with open-code-review unless a list or mode is chosen", () => {
+  assert.deepEqual(ticketReviewRoles({ defaultMode: "both" }), ["review-both-ocr"]);
+  assert.deepEqual(ticketReviewRoles({ defaultMode: "both", reviewer: "ocr", ocrDepth: "deep", deep: 2 }), ["review-both-ocr", "review-both-ocr2"]);
+  assert.deepEqual(ticketReviewRoles({ defaultMode: "both", reviewer: "split" }), ["review-both"]);
+  assert.deepEqual(ticketReviewRoles({ defaultMode: "both", mode: "split" }), ["review-spec", "review-std"]);
+  assert.deepEqual(ticketReviewRoles({ listed: "review-both", defaultMode: "split" }), ["review-both"]);
+  assert.deepEqual(ticketReviewRoles({ roles: "review-std" }), ["review-std"]);
+});
+
+test("isOcr knows every open-code-review role", () => {
+  assert.equal(isOcr(["review-both-ocr", "review-both-ocr2@low", "review-both-ocr-deepseek"]), true);
+  assert.equal(isOcr(["review-both-ocr", "review-both"]), false);
 });

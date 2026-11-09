@@ -2,7 +2,7 @@
 // fanned-out review splits a diff into (lib/bundle.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toFinding, finalText } from "../lib/ocr.mjs";
+import { toFinding, finalText, killAfterMs, ruleFile } from "../lib/ocr.mjs";
 import { bundles, skipped } from "../lib/bundle.mjs";
 import { finalBlock } from "../lib/ledger.mjs";
 import { anchor, parseDiff, locate } from "../image/anchor.mjs";
@@ -187,4 +187,16 @@ test("ocr: the container run mounts the repository read-only and names the key, 
   assert.equal(args[args.indexOf("OCR_LLM_TOKEN") - 1], "-e");
   assert.ok(!args.some((a) => /OCR_LLM_TOKEN=/.test(a)));
   assert.deepEqual(args.slice(-3), ["review", "--repo", "/work/r"]);
+});
+
+test("open-code-review's hard stop allows a wave per concurrency groups", () => {
+  const min = (o) => killAfterMs(o) / 60e3;
+  assert.equal(min({ timeoutMin: 15, effort: "medium", files: 5, concurrency: 8 }), 35);
+  assert.equal(min({ timeoutMin: 15, effort: "medium", files: 157, concurrency: 8 }), 15 * 2 * 20 + 5);
+  assert.equal(min({ timeoutMin: 10, effort: "low", files: 0, concurrency: 8 }), 15);
+});
+
+test("OCR_INCLUDE becomes OCR's user rule file; none when empty", () => {
+  assert.deepEqual(JSON.parse(ruleFile(["**/*.test.*", "**/*.md"])), { include: ["**/*.test.*", "**/*.md"] });
+  assert.equal(ruleFile([]), null);
 });

@@ -135,9 +135,13 @@ Usage: delegate.sh <command> ...
                                  unmerged in digest.md. --with-box: Boxie's own source at .boxie-ref/
                                  in each member's clone, to check claims about Boxie
   phase-review <repo> --base REF [--head REF] [--name N] [--spec FILE ...] [--max-rounds N] [--roles a,b,c]
-                                 The whole phase diff, split into areas under REVIEW_DIFF_MAX, one family
-                                 per round (PHASE_REVIEW_ROLES, rotating) until two rounds in a row from
-                                 different families find nothing medium+ on the same head. Exit 3: findings
+                                 The whole phase diff, one family per round (PHASE_REVIEW_ROLES, rotating:
+                                 open-code-review on Gemini, then DeepSeek) until two rounds in a row from
+                                 different families find nothing medium+ on the same head. An OCR role
+                                 takes the whole diff in one run; an OpenCode role, one run per area under
+                                 REVIEW_DIFF_MAX. Both families run side by side (PHASE_REVIEW_PARALLEL); after
+                                 fixes, only the files changed since the last fully read head (PHASE_REVIEW_DELTA).
+                                 A rerun first finishes a round's unreviewed areas. Exit 3: findings
   phase-close <repo> --base REF [--head REF] [--name N] [--issues 12,13]
                                  The phase checklist: phase-review clean on this head, clean tree, no
                                  unmerged agent/* branch of the phase, HOST_GATE_CMD green, no loop
@@ -1315,7 +1319,7 @@ ocr_review() {
     OMNIROUTE_BASE_URL="${OMNIROUTE_BASE_URL:-http://host.docker.internal:20128/v1}" \
     OMNIROUTE_HOST_URL="$OMNIROUTE_HOST_URL" OMNIROUTE_API_KEY="$OMNIROUTE_API_KEY" node "$(winpath "$BOX/lib/ocr.mjs")" review \
     "$(winpath "$REPO")" "$base" "$branch" "$(winpath "$dir")" --model "$model" --effort "${OCR_EFFORT:-medium}" \
-    --concurrency "${OCR_CONCURRENCY:-8}" --timeout "${OCR_TIMEOUT_MIN:-15}" ${OCR_MAX_TOOLS:+--max-tools "$OCR_MAX_TOOLS"} \
+    --concurrency "${OCR_CONCURRENCY:-8}" --timeout "${OCR_TIMEOUT_MIN:-15}" ${OCR_MAX_TOOLS:+--max-tools "$OCR_MAX_TOOLS"} ${OCR_INCLUDE:+--include "$OCR_INCLUDE"} \
     ${bg:+--background-file "$(winpath "$bg")"} ${paths:+--paths "$paths"} 2>&1 | tee "$dir/harness.log" >&2 || true
   if [ -f "$dir/summary.json" ]; then
     node "$(winpath "$BOX/lib/ledger.mjs")" finish "$(winpath "$REPO")" "$(winpath "$dir")" --mode review --target "$branch" >"$dir/verdict.txt" 2>>"$dir/harness.log" \
